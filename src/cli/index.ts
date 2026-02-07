@@ -14,7 +14,7 @@ import { subscribe } from './subscribe.js';
 import { feeTopicCreationSet, feeMessageSet, feeMessageGet } from './fees.js';
 import { parseCommonFlags, outputError } from './util.js';
 
-const VERSION = '0.8.1';
+const VERSION = '0.8.2';
 
 const HELP = `
   clawntenna v${VERSION}
@@ -28,7 +28,7 @@ const HELP = `
     whoami [appId]                                  Show wallet address, balance, nickname, agent status
 
   Messaging:
-    send <topicId> "<message>" [--reply-to <txHash>] [--mentions <addr,...>]
+    send <topicId> "<message>" [--reply-to <txHash>] [--mentions <addr,...>] [--no-wait]
                                                    Encrypt and send a message
     read <topicId>                                 Read and decrypt recent messages
     subscribe <topicId>                            Real-time message listener
@@ -180,7 +180,8 @@ async function main() {
         }
         const replyTo = flags['reply-to'] || undefined;
         const mentions = flags.mentions ? flags.mentions.split(',').map(a => a.trim()) : undefined;
-        await send(topicId, message, { ...cf, replyTo, mentions });
+        const noWait = flags['no-wait'] === 'true';
+        await send(topicId, message, { ...cf, replyTo, mentions, noWait });
         break;
       }
 

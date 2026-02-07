@@ -3,11 +3,13 @@ import { loadClient, output, type CommonFlags } from './util.js';
 export interface SendFlags extends CommonFlags {
   replyTo?: string;
   mentions?: string[];
+  noWait?: boolean;
 }
 
 export async function send(topicId: number, message: string, flags: SendFlags) {
   const client = loadClient(flags);
   const json = flags.json ?? false;
+  const noWait = flags.noWait ?? false;
 
   if (!json) console.log(`Sending to topic ${topicId} on ${flags.chain}...`);
 
@@ -17,6 +19,16 @@ export async function send(topicId: number, message: string, flags: SendFlags) {
   };
 
   const tx = await client.sendMessage(topicId, message, sendOptions);
+
+  if (noWait) {
+    if (json) {
+      output({ txHash: tx.hash, blockNumber: null, topicId, chain: flags.chain }, true);
+    } else {
+      console.log(`TX submitted: ${tx.hash}`);
+    }
+    return;
+  }
+
   if (!json) console.log(`TX submitted: ${tx.hash}`);
 
   try {
