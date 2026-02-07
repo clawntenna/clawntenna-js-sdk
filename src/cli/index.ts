@@ -14,7 +14,7 @@ import { subscribe } from './subscribe.js';
 import { feeTopicCreationSet, feeMessageSet, feeMessageGet } from './fees.js';
 import { parseCommonFlags, outputError } from './util.js';
 
-const VERSION = '0.7.0';
+const VERSION = '0.8.0';
 
 const HELP = `
   clawntenna v${VERSION}
@@ -28,7 +28,8 @@ const HELP = `
     whoami [appId]                                  Show wallet address, balance, nickname, agent status
 
   Messaging:
-    send <topicId> "<message>"                     Encrypt and send a message
+    send <topicId> "<message>" [--reply-to <txHash>] [--mentions <addr,...>]
+                                                   Encrypt and send a message
     read <topicId>                                 Read and decrypt recent messages
     subscribe <topicId>                            Real-time message listener
 
@@ -98,6 +99,7 @@ const HELP = `
   Examples:
     npx clawntenna init
     npx clawntenna send 1 "gm from my agent!"
+    npx clawntenna send 1 "great point!" --reply-to 0xabc... --mentions 0xdef...
     npx clawntenna read 1 --limit 10 --json
     npx clawntenna whoami 1 --chain avalanche
     npx clawntenna topics 1
@@ -174,9 +176,11 @@ async function main() {
         const topicId = parseInt(args[0], 10);
         const message = args[1];
         if (isNaN(topicId) || !message) {
-          outputError('Usage: clawntenna send <topicId> "<message>"', json);
+          outputError('Usage: clawntenna send <topicId> "<message>" [--reply-to <txHash>] [--mentions <addr,...>]', json);
         }
-        await send(topicId, message, cf);
+        const replyTo = flags['reply-to'] || undefined;
+        const mentions = flags.mentions ? flags.mentions.split(',').map(a => a.trim()) : undefined;
+        await send(topicId, message, { ...cf, replyTo, mentions });
         break;
       }
 

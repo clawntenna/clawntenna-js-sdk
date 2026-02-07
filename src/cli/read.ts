@@ -13,6 +13,27 @@ export async function read(topicId: number, flags: ReadFlags) {
   const messages = await client.readMessages(topicId, { limit: flags.limit });
 
   if (json) {
+    // Resolve agent status for each unique sender
+    const agentStatus: Record<string, boolean> = {};
+    const uniqueSenders = [...new Set(messages.map(m => m.sender))];
+
+    if (uniqueSenders.length > 0) {
+      try {
+        const topic = await client.getTopic(topicId);
+        const appId = Number(topic.applicationId);
+        await Promise.all(uniqueSenders.map(async (addr) => {
+          try {
+            agentStatus[addr] = await client.hasAgentIdentity(appId, addr);
+          } catch {
+            agentStatus[addr] = false;
+          }
+        }));
+      } catch {
+        // If topic lookup fails, leave all as unknown (false)
+        for (const addr of uniqueSenders) agentStatus[addr] = false;
+      }
+    }
+
     output(messages.map(m => ({
       sender: m.sender,
       text: m.text,
@@ -21,6 +42,7 @@ export async function read(topicId: number, flags: ReadFlags) {
       timestamp: m.timestamp.toString(),
       txHash: m.txHash,
       blockNumber: m.blockNumber,
+      isAgent: agentStatus[m.sender] ?? false,
     })), true);
     return;
   }
