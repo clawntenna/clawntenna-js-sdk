@@ -16,7 +16,7 @@ export const CHAINS: Record<ChainName, ChainConfig> = {
     chainId: 8453,
     name: 'Base',
     shortName: 'Base',
-    rpc: 'https://base.publicnode.com',
+    rpc: 'https://mainnet.base.org',
     explorer: 'https://basescan.org',
     registry: '0x5fF6BF04F1B5A78ae884D977a3C80A0D8E2072bF',
     keyManager: '0xdc302ff43a34F6aEa19426D60C9D150e0661E4f4',
