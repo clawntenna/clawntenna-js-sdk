@@ -3,6 +3,7 @@ import { homedir } from 'os';
 import { join } from 'path';
 import { ethers } from 'ethers';
 import type { Credentials, CredentialsV1 } from '../types.js';
+import { output } from './util.js';
 
 const CONFIG_DIR = join(homedir(), '.config', 'clawntenna');
 const CREDS_PATH = join(CONFIG_DIR, 'credentials.json');
@@ -50,7 +51,7 @@ function migrateV1ToV2(v1: CredentialsV1): Credentials {
   return v2;
 }
 
-export async function init() {
+export async function init(json = false) {
   // Check new path first
   if (existsSync(CREDS_PATH)) {
     const raw = JSON.parse(readFileSync(CREDS_PATH, 'utf-8'));
@@ -59,17 +60,25 @@ export async function init() {
     if (!raw.version) {
       const migrated = migrateV1ToV2(raw as CredentialsV1);
       writeFileSync(CREDS_PATH, JSON.stringify(migrated, null, 2), { mode: 0o600 });
-      console.log(`Migrated credentials to v2 format at ${CREDS_PATH}`);
-      console.log(`  Address: ${migrated.wallet.address}`);
+      if (json) {
+        output({ status: 'migrated', address: migrated.wallet.address, path: CREDS_PATH }, true);
+      } else {
+        console.log(`Migrated credentials to v2 format at ${CREDS_PATH}`);
+        console.log(`  Address: ${migrated.wallet.address}`);
+      }
       return;
     }
 
     const existing: Credentials = raw;
     const chainNames = Object.values(existing.chains).map(c => c.name);
-    console.log(`Credentials already exist at ${CREDS_PATH}`);
-    console.log(`  Address: ${existing.wallet.address}`);
-    console.log(`  Chains: ${chainNames.join(', ') || 'none configured'}`);
-    console.log(`  To reset, delete ${CREDS_PATH} and run init again.`);
+    if (json) {
+      output({ status: 'exists', address: existing.wallet.address, chains: chainNames, path: CREDS_PATH }, true);
+    } else {
+      console.log(`Credentials already exist at ${CREDS_PATH}`);
+      console.log(`  Address: ${existing.wallet.address}`);
+      console.log(`  Chains: ${chainNames.join(', ') || 'none configured'}`);
+      console.log(`  To reset, delete ${CREDS_PATH} and run init again.`);
+    }
     return;
   }
 
@@ -81,9 +90,13 @@ export async function init() {
     mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
     writeFileSync(CREDS_PATH, JSON.stringify(migrated, null, 2), { mode: 0o600 });
 
-    console.log(`Migrated credentials from ${LEGACY_CREDS_PATH} to ${CREDS_PATH}`);
-    console.log(`  Address: ${migrated.wallet.address}`);
-    console.log(`  You can safely delete ${LEGACY_CREDS_PATH}`);
+    if (json) {
+      output({ status: 'migrated', address: migrated.wallet.address, path: CREDS_PATH, migratedFrom: LEGACY_CREDS_PATH }, true);
+    } else {
+      console.log(`Migrated credentials from ${LEGACY_CREDS_PATH} to ${CREDS_PATH}`);
+      console.log(`  Address: ${migrated.wallet.address}`);
+      console.log(`  You can safely delete ${LEGACY_CREDS_PATH}`);
+    }
     return;
   }
 
@@ -113,14 +126,18 @@ export async function init() {
   mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
   writeFileSync(CREDS_PATH, JSON.stringify(credentials, null, 2), { mode: 0o600 });
 
-  console.log(`Wallet created at ${CREDS_PATH}`);
-  console.log(`  Address: ${wallet.address}`);
-  console.log(`  Chains: base (8453), avalanche (43114)`);
-  console.log(`  Fund with ETH on Base or AVAX on Avalanche for gas`);
-  console.log('');
-  console.log('Next steps:');
-  console.log('  npx clawntenna send 1 "gm!"     # Post to #general');
-  console.log('  npx clawntenna read 1            # Read #general');
+  if (json) {
+    output({ status: 'created', address: wallet.address, chains: ['base', 'avalanche'], path: CREDS_PATH }, true);
+  } else {
+    console.log(`Wallet created at ${CREDS_PATH}`);
+    console.log(`  Address: ${wallet.address}`);
+    console.log(`  Chains: base (8453), avalanche (43114)`);
+    console.log(`  Fund with ETH on Base or AVAX on Avalanche for gas`);
+    console.log('');
+    console.log('Next steps:');
+    console.log('  npx clawntenna send 1 "gm!"     # Post to #general');
+    console.log('  npx clawntenna read 1            # Read #general');
+  }
 }
 
 export function loadCredentials(): Credentials | null {

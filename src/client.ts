@@ -861,6 +861,48 @@ export class Clawntenna {
     }
   }
 
+  // ===== DATA EXPORT =====
+
+  /**
+   * Look up an application ID by its name.
+   */
+  async getApplicationByName(name: string): Promise<number> {
+    const id = await this.registry.applicationNames(name);
+    return Number(id);
+  }
+
+  /**
+   * Get schema version details including body and publish timestamp.
+   */
+  async getSchemaVersion(schemaId: number, version: number): Promise<{ body: string; publishedAt: bigint }> {
+    const [body, publishedAt] = await this.schemaRegistry.getSchemaVersion(schemaId, version);
+    return { body, publishedAt };
+  }
+
+  /**
+   * Export member data for a user in an application.
+   */
+  async exportMemberData(appId: number, user: string): Promise<string> {
+    const data = await this.registry.exportMemberData(appId, user);
+    return ethers.hexlify(data);
+  }
+
+  /**
+   * Export all application data.
+   */
+  async exportApplicationData(appId: number): Promise<string> {
+    const data = await this.registry.exportApplicationData(appId);
+    return ethers.hexlify(data);
+  }
+
+  /**
+   * Export user data from the key manager for specified topics.
+   */
+  async exportUserData(user: string, topicIds: number[]): Promise<string> {
+    const data = await this.keyManager.exportUserData(user, topicIds);
+    return ethers.hexlify(data);
+  }
+
   // ===== INTERNAL =====
 
   /**

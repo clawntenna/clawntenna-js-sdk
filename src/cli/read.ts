@@ -1,25 +1,29 @@
-import { Clawntenna } from '../client.js';
-import { loadCredentials } from './init.js';
-import type { ChainName } from '../types.js';
+import { loadClient, output, type CommonFlags } from './util.js';
 
-interface ReadFlags {
-  chain: ChainName;
-  key?: string;
+interface ReadFlags extends CommonFlags {
   limit: number;
 }
 
 export async function read(topicId: number, flags: ReadFlags) {
-  // Read-only operations don't strictly need a key, but we use one if available
-  const privateKey = flags.key ?? loadCredentials()?.wallet.privateKey;
+  const client = loadClient(flags, false);
+  const json = flags.json ?? false;
 
-  const client = new Clawntenna({
-    chain: flags.chain,
-    privateKey: privateKey ?? undefined,
-  });
-
-  console.log(`Reading topic ${topicId} on ${flags.chain} (last ${flags.limit} messages)...\n`);
+  if (!json) console.log(`Reading topic ${topicId} on ${flags.chain} (last ${flags.limit} messages)...\n`);
 
   const messages = await client.readMessages(topicId, { limit: flags.limit });
+
+  if (json) {
+    output(messages.map(m => ({
+      sender: m.sender,
+      text: m.text,
+      replyTo: m.replyTo,
+      mentions: m.mentions,
+      timestamp: m.timestamp.toString(),
+      txHash: m.txHash,
+      blockNumber: m.blockNumber,
+    })), true);
+    return;
+  }
 
   if (messages.length === 0) {
     console.log('No messages found.');

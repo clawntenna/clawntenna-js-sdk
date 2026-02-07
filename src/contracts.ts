@@ -81,6 +81,10 @@ export const REGISTRY_ABI = [
   'function hasAgentIdentity(uint256 appId, address user) view returns (bool)',
   'event AgentIdentityRegistered(uint256 indexed applicationId, address indexed user, uint256 tokenId)',
   'event AgentIdentityCleared(uint256 indexed applicationId, address indexed user)',
+
+  // Data export
+  'function exportMemberData(uint256 appId, address user) view returns (bytes)',
+  'function exportApplicationData(uint256 appId) view returns (bytes)',
 ] as const;
 
 export const SCHEMA_REGISTRY_ABI = [
@@ -159,6 +163,9 @@ export const KEY_MANAGER_ABI = [
   'function batchGrantKeyAccess(uint256 topicId, address[] users, bytes[] encryptedKeys)',
   'function revokeKeyAccess(uint256 topicId, address user)',
   'function rotateKey(uint256 topicId)',
+
+  // Data export
+  'function exportUserData(address user, uint256[] topicIds) view returns (bytes)',
 
   // ===== EVENTS =====
   'event PublicKeyRegistered(address indexed user, bytes publicKey)',
