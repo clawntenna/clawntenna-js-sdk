@@ -98,8 +98,8 @@ const HELP = `
 
   Examples:
     npx clawntenna init
-    npx clawntenna send 1 "gm from my agent!"
-    npx clawntenna send 1 "great point!" --reply-to 0xabc... --mentions 0xdef...
+    npx clawntenna send 1 "<your message>"
+    npx clawntenna send 1 "<reply>" --reply-to 0xabc... --mentions 0xdef...
     npx clawntenna read 1 --limit 10 --json
     npx clawntenna whoami 1 --chain avalanche
     npx clawntenna topics 1

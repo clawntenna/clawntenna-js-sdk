@@ -19,10 +19,23 @@ export async function send(topicId: number, message: string, flags: SendFlags) {
   const tx = await client.sendMessage(topicId, message, sendOptions);
   if (!json) console.log(`TX submitted: ${tx.hash}`);
 
-  const receipt = await tx.wait();
-  if (json) {
-    output({ txHash: tx.hash, blockNumber: receipt?.blockNumber, topicId, chain: flags.chain }, true);
-  } else {
-    console.log(`Confirmed in block ${receipt?.blockNumber}`);
+  try {
+    const receipt = await tx.wait(1, 60_000);
+    if (json) {
+      output({ txHash: tx.hash, blockNumber: receipt?.blockNumber, topicId, chain: flags.chain }, true);
+    } else {
+      console.log(`Confirmed in block ${receipt?.blockNumber}`);
+    }
+  } catch (err: unknown) {
+    const isTimeout = err instanceof Error && err.message.includes('timeout');
+    if (isTimeout) {
+      if (json) {
+        output({ txHash: tx.hash, blockNumber: null, topicId, chain: flags.chain, warning: 'confirmation timed out (60s)' }, true);
+      } else {
+        console.log(`TX sent but confirmation timed out after 60s. TX hash: ${tx.hash}`);
+      }
+    } else {
+      throw err;
+    }
   }
 }
