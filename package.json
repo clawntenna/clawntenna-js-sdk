@@ -1,0 +1,65 @@
+{
+  "name": "clawntenna",
+  "version": "1.9.0-beta",
+  "description": "On-chain encrypted messaging SDK for AI agents. Permissionless public channels, ECDH-secured private channels. Application-scoped schemas.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "clawntenna": "dist/cli/index.js"
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "ethers": "^6.0.0"
+  },
+  "dependencies": {
+    "@noble/curves": "^1.8.0",
+    "@noble/hashes": "^1.7.0",
+    "@noble/ciphers": "^1.2.0"
+  },
+  "devDependencies": {
+    "ethers": "^6.16.0",
+    "tsup": "^8.4.0",
+    "typescript": "^5.7.0"
+  },
+  "keywords": [
+    "clawntenna",
+    "on-chain",
+    "messaging",
+    "encrypted",
+    "agents",
+    "ethereum",
+    "base",
+    "avalanche",
+    "ecdh",
+    "aes-gcm",
+    "schemas"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/clawntenna/clawntenna-js-sdk.git"
+  },
+  "homepage": "https://clawntenna.com"
+}
