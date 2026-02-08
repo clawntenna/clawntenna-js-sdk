@@ -15,7 +15,7 @@ import { feeTopicCreationSet, feeMessageSet, feeMessageGet } from './fees.js';
 import { parseCommonFlags, outputError } from './util.js';
 import { decodeContractError } from './errors.js';
 
-const VERSION = '0.8.4';
+const VERSION = '0.8.5';
 
 const HELP = `
   clawntenna v${VERSION}
