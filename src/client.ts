@@ -17,6 +17,7 @@ import {
   bytesToHex,
   hexToBytes,
 } from './crypto/ecdh.js';
+import { randomBytes } from '@noble/hashes/utils';
 import { AccessLevel } from './types.js';
 import type {
   ClawtennaOptions,
@@ -469,9 +470,65 @@ export class Clawntenna {
     const encryptedKey = ethers.getBytes(grant.encryptedKey);
     const granterPubKey = ethers.getBytes(grant.granterPublicKey);
 
+    // No grant exists yet (empty bytes) — cannot decrypt
+    if (encryptedKey.length === 0 || granterPubKey.length === 0) {
+      throw new Error(`No key grant found for topic ${topicId}. The topic key needs to be initialized first.`);
+    }
+
     const topicKey = decryptTopicKey(encryptedKey, this.ecdhPrivateKey, granterPubKey);
     this.topicKeys.set(topicId, topicKey);
     return topicKey;
+  }
+
+  /**
+   * Initialize a private topic's symmetric key by generating a random key and self-granting.
+   * This should be called once by the topic owner after creating a PRIVATE topic.
+   * Returns the generated topic key.
+   */
+  async initializeTopicKey(topicId: number): Promise<Uint8Array> {
+    if (!this.wallet) throw new Error('Wallet required');
+    if (!this.ecdhPrivateKey || !this.ecdhPublicKey) {
+      throw new Error('ECDH key not derived yet');
+    }
+
+    // Generate random 32-byte topic symmetric key
+    const topicKey = randomBytes(32);
+
+    // Encrypt for ourselves (self-grant)
+    const encrypted = encryptTopicKeyForUser(topicKey, this.ecdhPrivateKey, this.ecdhPublicKey);
+
+    // Store on-chain as a self-grant
+    const tx = await this.keyManager.grantKeyAccess(topicId, this.wallet.address, encrypted);
+    await tx.wait();
+
+    // Cache locally
+    this.topicKeys.set(topicId, topicKey);
+    return topicKey;
+  }
+
+  /**
+   * Get the topic key, initializing it if the caller is the topic owner and no grant exists.
+   * Tries fetchAndDecryptTopicKey first; if no grant exists and caller is topic owner,
+   * auto-initializes with initializeTopicKey.
+   */
+  async getOrInitializeTopicKey(topicId: number): Promise<Uint8Array> {
+    try {
+      return await this.fetchAndDecryptTopicKey(topicId);
+    } catch (err) {
+      const isNoGrant = err instanceof Error && err.message.includes('No key grant found');
+      if (!isNoGrant) throw err;
+
+      // Check if we're the topic owner — only owners can initialize
+      const topic = await this.getTopic(topicId);
+      if (!this.wallet || topic.owner.toLowerCase() !== this.wallet.address.toLowerCase()) {
+        throw new Error(
+          `No key grant found for topic ${topicId}. Ask the topic owner to grant you access with: keys grant ${topicId} ${this.wallet?.address ?? '<your-address>'}`
+        );
+      }
+
+      // Auto-initialize as the topic owner
+      return this.initializeTopicKey(topicId);
+    }
   }
 
   /**
@@ -956,9 +1013,9 @@ export class Clawntenna {
     const topic = await this.getTopic(topicId);
 
     if (topic.accessLevel === AccessLevel.PRIVATE) {
-      // Auto-fetch if ECDH keys are loaded
+      // Auto-fetch (or auto-initialize for owner) if ECDH keys are loaded
       if (this.ecdhPrivateKey) {
-        return this.fetchAndDecryptTopicKey(topicId);
+        return this.getOrInitializeTopicKey(topicId);
       }
       throw new Error(
         `Topic ${topicId} is PRIVATE. Load ECDH keys first (loadECDHKeypair or deriveECDHFromWallet), then call fetchAndDecryptTopicKey() or setTopicKey().`

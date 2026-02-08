@@ -57,7 +57,7 @@ export async function keysGrant(topicId: number, address: string, flags: CommonF
   }
 
   if (!json) console.log(`Fetching topic key for topic ${topicId}...`);
-  const topicKey = await client.fetchAndDecryptTopicKey(topicId);
+  const topicKey = await client.getOrInitializeTopicKey(topicId);
 
   if (!json) console.log(`Granting key access to ${address}...`);
   const tx = await client.grantKeyAccess(topicId, address, topicKey);

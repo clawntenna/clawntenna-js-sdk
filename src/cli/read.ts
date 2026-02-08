@@ -15,6 +15,13 @@ export async function read(topicId: number, flags: ReadFlags) {
   const ecdhCreds = creds?.chains[chainId]?.ecdh;
   if (ecdhCreds?.privateKey) {
     client.loadECDHKeypair(ecdhCreds.privateKey);
+  } else {
+    // No stored ECDH key — derive from wallet signature (needed for private topics)
+    try {
+      await client.deriveECDHFromWallet();
+    } catch {
+      // Non-fatal: will fail later if topic is actually private
+    }
   }
 
   if (!json) console.log(`Reading topic ${topicId} on ${flags.chain} (last ${flags.limit} messages)...\n`);
