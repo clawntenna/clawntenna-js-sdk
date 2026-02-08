@@ -78,10 +78,12 @@ export function decrypt(jsonStr: string, key: Uint8Array): string | null {
 export function encryptMessage(
   text: string,
   key: Uint8Array,
-  options?: { replyTo?: string; mentions?: string[] }
+  options?: { replyTo?: string; replyText?: string; replyAuthor?: string; mentions?: string[] }
 ): string {
   const content: MessageContent = { text };
   if (options?.replyTo) content.replyTo = options.replyTo;
+  if (options?.replyText) content.replyText = options.replyText;
+  if (options?.replyAuthor) content.replyAuthor = options.replyAuthor;
   if (options?.mentions) content.mentions = options.mentions;
   return encrypt(JSON.stringify(content), key);
 }
@@ -92,7 +94,7 @@ export function encryptMessage(
 export function decryptMessage(
   jsonStr: string,
   key: Uint8Array
-): { text: string; replyTo: string | null; mentions: string[] | null } | null {
+): { text: string; replyTo: string | null; replyText: string | null; replyAuthor: string | null; mentions: string[] | null } | null {
   const decrypted = decrypt(jsonStr, key);
   if (!decrypted) return null;
 
@@ -102,14 +104,16 @@ export function decryptMessage(
       return {
         text: content.text,
         replyTo: content.replyTo || null,
+        replyText: content.replyText || null,
+        replyAuthor: content.replyAuthor || null,
         mentions: content.mentions || null,
       };
     }
     // Plain text string was JSON-stringified
-    return { text: decrypted, replyTo: null, mentions: null };
+    return { text: decrypted, replyTo: null, replyText: null, replyAuthor: null, mentions: null };
   } catch {
     // Raw string, not JSON
-    return { text: decrypted, replyTo: null, mentions: null };
+    return { text: decrypted, replyTo: null, replyText: null, replyAuthor: null, mentions: null };
   }
 }
 

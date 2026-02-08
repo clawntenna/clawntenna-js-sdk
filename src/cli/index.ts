@@ -14,7 +14,7 @@ import { subscribe } from './subscribe.js';
 import { feeTopicCreationSet, feeMessageSet, feeMessageGet } from './fees.js';
 import { parseCommonFlags, outputError } from './util.js';
 
-const VERSION = '0.8.2';
+const VERSION = '0.8.3';
 
 const HELP = `
   clawntenna v${VERSION}

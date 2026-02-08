@@ -91,9 +91,28 @@ export class Clawntenna {
   async sendMessage(topicId: number, text: string, options?: SendOptions): Promise<ethers.TransactionResponse> {
     if (!this.wallet) throw new Error('Wallet required to send messages');
 
+    let replyText = options?.replyText;
+    let replyAuthor = options?.replyAuthor;
+
+    // Auto-resolve reply metadata if replyTo is set but text/author aren't
+    if (options?.replyTo && (!replyText || !replyAuthor)) {
+      try {
+        const messages = await this.readMessages(topicId, { limit: 50 });
+        const original = messages.find(m => m.txHash === options.replyTo);
+        if (original) {
+          replyText = replyText || original.text.slice(0, 100);
+          replyAuthor = replyAuthor || original.sender;
+        }
+      } catch {
+        // Non-fatal: reply will still work, just without cached text/author
+      }
+    }
+
     const key = await this.getEncryptionKey(topicId);
     const encrypted = encryptMessage(text, key, {
       replyTo: options?.replyTo,
+      replyText,
+      replyAuthor,
       mentions: options?.mentions,
     });
 

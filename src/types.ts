@@ -90,6 +90,8 @@ export interface KeyGrant {
 export interface MessageContent {
   text: string;
   replyTo?: string;
+  replyText?: string;
+  replyAuthor?: string;
   mentions?: string[];
 }
 
@@ -152,6 +154,8 @@ export interface ReadOptions {
 
 export interface SendOptions {
   replyTo?: string;
+  replyText?: string;
+  replyAuthor?: string;
   mentions?: string[];
 }
 
