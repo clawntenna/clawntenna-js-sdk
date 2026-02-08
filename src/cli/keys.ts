@@ -1,4 +1,4 @@
-import { loadClient, output, outputError, type CommonFlags } from './util.js';
+import { loadClient, output, outputError, chainIdForCredentials, type CommonFlags } from './util.js';
 import { loadCredentials } from './init.js';
 import { bytesToHex } from '../crypto/ecdh.js';
 
@@ -7,7 +7,7 @@ export async function keysRegister(flags: CommonFlags) {
   const json = flags.json ?? false;
   const creds = loadCredentials();
 
-  const chainId = flags.chain === 'base' ? '8453' : '43114';
+  const chainId = chainIdForCredentials(flags.chain);
   const ecdhCreds = creds?.chains[chainId]?.ecdh;
 
   if (ecdhCreds?.privateKey) {
@@ -48,7 +48,7 @@ export async function keysGrant(topicId: number, address: string, flags: CommonF
   const json = flags.json ?? false;
   const creds = loadCredentials();
 
-  const chainId = flags.chain === 'base' ? '8453' : '43114';
+  const chainId = chainIdForCredentials(flags.chain);
   const ecdhCreds = creds?.chains[chainId]?.ecdh;
   if (ecdhCreds?.privateKey) {
     client.loadECDHKeypair(ecdhCreds.privateKey);

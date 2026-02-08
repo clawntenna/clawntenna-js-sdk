@@ -43,6 +43,15 @@ export function outputError(message: string, json: boolean): never {
   process.exit(1);
 }
 
+export function chainIdForCredentials(chain: ChainName): string {
+  const map: Record<ChainName, string> = {
+    base: '8453',
+    baseSepolia: '84532',
+    avalanche: '43114',
+  };
+  return map[chain] ?? '8453';
+}
+
 function bigintReplacer(_key: string, value: unknown): unknown {
   return typeof value === 'bigint' ? value.toString() : value;
 }

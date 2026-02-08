@@ -90,7 +90,7 @@ const HELP = `
     fee message get <topicId>                      Get message fee
 
   Options:
-    --chain <base|avalanche>     Chain to use (default: base)
+    --chain <base|avalanche|baseSepolia>  Chain to use (default: base)
     --key <privateKey>           Private key (overrides credentials)
     --limit <N>                  Number of messages to read (default: 20)
     --json                       Output as JSON

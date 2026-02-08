@@ -1,4 +1,4 @@
-import { loadClient, output, type CommonFlags } from './util.js';
+import { loadClient, output, chainIdForCredentials, type CommonFlags } from './util.js';
 import { loadCredentials } from './init.js';
 import { ethers } from 'ethers';
 
@@ -34,7 +34,7 @@ export async function whoami(appId: number | null, flags: CommonFlags) {
 
   const creds = loadCredentials();
   if (creds) {
-    const chainId = flags.chain === 'base' ? '8453' : '43114';
+    const chainId = chainIdForCredentials(flags.chain);
     const chainCreds = creds.chains[chainId];
     result.ecdhRegistered = chainCreds?.ecdh?.registered ?? false;
   }

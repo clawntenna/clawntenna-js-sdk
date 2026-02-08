@@ -1,4 +1,4 @@
-import { loadClient, output, type CommonFlags } from './util.js';
+import { loadClient, output, chainIdForCredentials, type CommonFlags } from './util.js';
 import { loadCredentials } from './init.js';
 
 export interface SendFlags extends CommonFlags {
@@ -14,7 +14,7 @@ export async function send(topicId: number, message: string, flags: SendFlags) {
 
   // Load ECDH credentials so private topic encryption works automatically
   const creds = loadCredentials();
-  const chainId = flags.chain === 'base' ? '8453' : '43114';
+  const chainId = chainIdForCredentials(flags.chain);
   const ecdhCreds = creds?.chains[chainId]?.ecdh;
   if (ecdhCreds?.privateKey) {
     client.loadECDHKeypair(ecdhCreds.privateKey);

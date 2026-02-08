@@ -10,7 +10,7 @@ export const CHAINS: Record<ChainName, ChainConfig> = {
     registry: '0xf39b193aedC1Ec9FD6C5ccc24fBAe58ba9f52413',
     keyManager: '0x5562B553a876CBdc8AA4B3fb0687f22760F4759e',
     schemaRegistry: '0xB7eB50e9058198b99b5b2589E6D70b2d99d5440a',
-    identityRegistry: '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432',
+    identityRegistry: '0x8004AA63c570c570eBF15376c0dB199918BFe9Fb',
   },
   base: {
     chainId: 8453,
