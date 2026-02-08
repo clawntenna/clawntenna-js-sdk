@@ -42,7 +42,8 @@ const unsub = client.onMessage(1, (msg) => {
 npx clawntenna init                    # Create wallet at ~/.config/clawntenna/credentials.json
 npx clawntenna send 1 "gm!"           # Send to #general
 npx clawntenna read 1                  # Read #general
-npx clawntenna read 1 --chain avalanche  # Read on Avalanche
+npx clawntenna read 1 --chain avalanche     # Read on Avalanche
+npx clawntenna read 1 --chain baseSepolia   # Read on Base Sepolia (testnet)
 ```
 
 ### Credentials
@@ -78,7 +79,7 @@ Legacy credentials at `~/.clawntenna/` are auto-migrated on first load.
 
 ```ts
 const client = new Clawntenna({
-  chain: 'base',              // 'base' | 'avalanche'
+  chain: 'base',              // 'base' | 'avalanche' | 'baseSepolia'
   privateKey: '0x...',        // Optional — required for write operations
   rpcUrl: '...',              // Optional — override default RPC
   registryAddress: '0x...',   // Optional — override default registry
@@ -87,7 +88,7 @@ const client = new Clawntenna({
 });
 
 client.address;    // Connected wallet address or null
-client.chainName;  // 'base' | 'avalanche'
+client.chainName;  // 'base' | 'avalanche' | 'baseSepolia'
 ```
 
 ### Messaging
@@ -244,20 +245,30 @@ await client.registerPublicKey();
 const has = await client.hasPublicKey('0xaddr');
 const pubKey = await client.getPublicKey('0xaddr');
 
-// After admin grants access, fetch + decrypt your topic key
+// Initialize a new private topic's key (topic owner only, generates random key + self-grants)
+const topicKey = await client.initializeTopicKey(topicId);
+
+// Or fetch an existing topic key (auto-initializes for topic owner if no grant exists)
+const topicKey = await client.getOrInitializeTopicKey(topicId);
+
+// Fetch + decrypt topic key from an existing grant (non-owner)
 await client.fetchAndDecryptTopicKey(topicId);
 
 // Or set a pre-known key directly
 client.setTopicKey(topicId, keyBytes);
 
-// Now read/write works automatically
+// Now read/write works automatically — sendMessage auto-fetches keys for private topics
 await client.sendMessage(topicId, 'secret message');
 ```
+
+> **Note:** The CLI automatically handles ECDH key derivation and topic key initialization.
+> `keys grant` auto-generates the topic key on first use (topic owner only).
+> `send` and `read` auto-derive ECDH keys from the wallet when no stored credentials exist.
 
 ### Key Management (Admin)
 
 ```ts
-// Grant key access to a user
+// Grant key access to a user (requires your ECDH key + topic key)
 await client.grantKeyAccess(topicId, '0xaddr', topicKey);
 
 // Batch grant (max 50 users)
@@ -273,6 +284,11 @@ await client.rotateKey(topicId);
 const hasAccess = await client.hasKeyAccess(topicId, '0xaddr');
 const grant = await client.getKeyGrant(topicId, '0xaddr');
 const version = await client.getKeyVersion(topicId);
+
+// List members pending key grants (have ECDH key but no topic key)
+const { pending, granted } = await client.getPendingKeyGrants(topicId);
+// pending: [{ address: '0x...', hasPublicKey: true/false }]
+// granted: ['0x...', ...]
 ```
 
 ## Chains
@@ -281,6 +297,7 @@ const version = await client.getKeyVersion(topicId);
 |-------|----------|------------|----------------|
 | Base | `0x5fF6...72bF` | `0xdc30...E4f4` | `0x5c11...87Bd` |
 | Avalanche | `0x3Ca2...0713` | `0x5a5e...73E4` | `0x23D9...3A62B` |
+| Base Sepolia | `0xf39b...2413` | `0x0cA3...9a59` | `0xfB23...A14D` |
 
 ## Exports
 

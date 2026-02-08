@@ -584,6 +584,41 @@ export class Clawntenna {
   }
 
   /**
+   * Get members who have registered ECDH keys but haven't been granted access to a private topic.
+   * Useful for topic owners to see who's waiting for a key grant.
+   */
+  async getPendingKeyGrants(topicId: number): Promise<{
+    pending: Array<{ address: string; hasPublicKey: boolean }>;
+    granted: string[];
+  }> {
+    const topic = await this.getTopic(topicId);
+    const members = await this.getApplicationMembers(Number(topic.applicationId));
+
+    // Filter out zero addresses and deduplicate
+    const uniqueMembers = [...new Set(members)].filter(a => a !== ethers.ZeroAddress);
+
+    const pending: Array<{ address: string; hasPublicKey: boolean }> = [];
+    const granted: string[] = [];
+
+    await Promise.all(
+      uniqueMembers.map(async (addr) => {
+        const [hasAccess, hasKey] = await Promise.all([
+          this.hasKeyAccess(topicId, addr),
+          this.hasPublicKey(addr),
+        ]);
+
+        if (hasAccess) {
+          granted.push(addr);
+        } else {
+          pending.push({ address: addr, hasPublicKey: hasKey });
+        }
+      })
+    );
+
+    return { pending, granted };
+  }
+
+  /**
    * Get the key grant details for a user on a topic.
    */
   async getKeyGrant(topicId: number, address: string): Promise<{

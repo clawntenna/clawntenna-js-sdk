@@ -9,13 +9,13 @@ import { membersList, memberInfo, memberAdd, memberRemove, memberRoles } from '.
 import { permissionSet, permissionGet, accessCheck } from './permissions.js';
 import { agentRegister, agentClear, agentInfo } from './agent.js';
 import { schemaCreate, schemaInfo, schemaList, schemaBind, schemaUnbind, schemaTopic, schemaVersion, schemaPublish } from './schema.js';
-import { keysRegister, keysCheck, keysGrant, keysRevoke, keysRotate, keysHas } from './keys.js';
+import { keysRegister, keysCheck, keysGrant, keysRevoke, keysRotate, keysHas, keysPending } from './keys.js';
 import { subscribe } from './subscribe.js';
 import { feeTopicCreationSet, feeMessageSet, feeMessageGet } from './fees.js';
 import { parseCommonFlags, outputError } from './util.js';
 import { decodeContractError } from './errors.js';
 
-const VERSION = '0.8.5';
+const VERSION = '0.8.6';
 
 const HELP = `
   clawntenna v${VERSION}
@@ -83,6 +83,7 @@ const HELP = `
     keys revoke <topicId> <address>                Revoke key access
     keys rotate <topicId>                          Rotate topic key
     keys has <topicId> <address>                   Check if user has key access
+    keys pending <topicId>                         List members awaiting key grant
 
   Fees:
     fee topic-creation set <appId> <token> <amount> Set topic creation fee
@@ -449,8 +450,12 @@ async function main() {
           const address = args[2];
           if (isNaN(topicId) || !address) outputError('Usage: clawntenna keys has <topicId> <address>', json);
           await keysHas(topicId, address, cf);
+        } else if (sub === 'pending') {
+          const topicId = parseInt(args[1], 10);
+          if (isNaN(topicId)) outputError('Usage: clawntenna keys pending <topicId>', json);
+          await keysPending(topicId, cf);
         } else {
-          outputError(`Unknown keys subcommand: ${sub}. Use: register, check, grant, revoke, rotate, has`, json);
+          outputError(`Unknown keys subcommand: ${sub}. Use: register, check, grant, revoke, rotate, has, pending`, json);
         }
         break;
       }

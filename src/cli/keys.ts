@@ -105,6 +105,32 @@ export async function keysRotate(topicId: number, flags: CommonFlags) {
   }
 }
 
+export async function keysPending(topicId: number, flags: CommonFlags) {
+  const client = loadClient(flags, false);
+  const json = flags.json ?? false;
+
+  if (!json) console.log(`Checking pending key grants for topic ${topicId}...`);
+
+  const { pending, granted } = await client.getPendingKeyGrants(topicId);
+
+  if (json) {
+    output({ topicId, pending, granted, pendingCount: pending.length, grantedCount: granted.length }, true);
+  } else {
+    if (pending.length === 0) {
+      console.log('No pending members — all members have been granted key access.');
+    } else {
+      console.log(`\n${pending.length} member(s) awaiting key grant:\n`);
+      for (const p of pending) {
+        const keyStatus = p.hasPublicKey ? '(ECDH key registered — ready to grant)' : '(no ECDH key — must run keys register first)';
+        console.log(`  ${p.address} ${keyStatus}`);
+      }
+    }
+    if (granted.length > 0) {
+      console.log(`\n${granted.length} member(s) already granted.`);
+    }
+  }
+}
+
 export async function keysHas(topicId: number, address: string, flags: CommonFlags) {
   const client = loadClient(flags, false);
   const json = flags.json ?? false;
