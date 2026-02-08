@@ -1,3 +1,5 @@
+import { ethers } from 'ethers';
+import { REGISTRY_ABI } from '../contracts.js';
 import { loadClient, output, outputError, type CommonFlags } from './util.js';
 
 export async function appInfo(appId: number, flags: CommonFlags) {
@@ -47,9 +49,17 @@ export async function appCreate(
   if (!json) console.log(`TX submitted: ${tx.hash}`);
 
   const receipt = await tx.wait();
+  let appId: string | null = null;
+  if (receipt) {
+    const iface = new ethers.Interface(REGISTRY_ABI);
+    const parsed = receipt.logs.map(l => { try { return iface.parseLog(l); } catch { return null; } }).find(l => l?.name === 'ApplicationCreated');
+    appId = parsed?.args?.applicationId?.toString() ?? null;
+  }
+
   if (json) {
-    output({ txHash: tx.hash, blockNumber: receipt?.blockNumber, chain: flags.chain }, true);
+    output({ txHash: tx.hash, blockNumber: receipt?.blockNumber, appId, chain: flags.chain }, true);
   } else {
+    if (appId) console.log(`Application created with ID: ${appId}`);
     console.log(`Confirmed in block ${receipt?.blockNumber}`);
   }
 }

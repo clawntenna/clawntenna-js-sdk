@@ -13,8 +13,9 @@ import { keysRegister, keysCheck, keysGrant, keysRevoke, keysRotate, keysHas } f
 import { subscribe } from './subscribe.js';
 import { feeTopicCreationSet, feeMessageSet, feeMessageGet } from './fees.js';
 import { parseCommonFlags, outputError } from './util.js';
+import { decodeContractError } from './errors.js';
 
-const VERSION = '0.8.3';
+const VERSION = '0.8.4';
 
 const HELP = `
   clawntenna v${VERSION}
@@ -491,7 +492,7 @@ async function main() {
         outputError(`Unknown command: ${command}. Run 'clawntenna --help' for usage.`, json);
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = decodeContractError(err);
     if (json) {
       console.error(JSON.stringify({ error: message }));
     } else {

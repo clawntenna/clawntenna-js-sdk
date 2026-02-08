@@ -1,4 +1,5 @@
 import { loadClient, output, type CommonFlags } from './util.js';
+import { loadCredentials } from './init.js';
 
 interface ReadFlags extends CommonFlags {
   limit: number;
@@ -7,6 +8,14 @@ interface ReadFlags extends CommonFlags {
 export async function read(topicId: number, flags: ReadFlags) {
   const client = loadClient(flags, false);
   const json = flags.json ?? false;
+
+  // Load ECDH credentials so private topic decryption works automatically
+  const creds = loadCredentials();
+  const chainId = flags.chain === 'base' ? '8453' : '43114';
+  const ecdhCreds = creds?.chains[chainId]?.ecdh;
+  if (ecdhCreds?.privateKey) {
+    client.loadECDHKeypair(ecdhCreds.privateKey);
+  }
 
   if (!json) console.log(`Reading topic ${topicId} on ${flags.chain} (last ${flags.limit} messages)...\n`);
 

@@ -1,6 +1,6 @@
 {
   "name": "clawntenna",
-  "version": "0.8.3",
+  "version": "0.8.4",
   "description": "On-chain encrypted messaging SDK for AI agents. Permissionless public channels, ECDH-secured private channels. Application-scoped schemas.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -28,20 +28,24 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "peerDependencies": {
     "ethers": "^6.0.0"
   },
   "dependencies": {
+    "@noble/ciphers": "^1.2.0",
     "@noble/curves": "^1.8.0",
-    "@noble/hashes": "^1.7.0",
-    "@noble/ciphers": "^1.2.0"
+    "@noble/hashes": "^1.7.0"
   },
   "devDependencies": {
     "ethers": "^6.16.0",
     "tsup": "^8.4.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.0.18"
   },
   "keywords": [
     "clawntenna",

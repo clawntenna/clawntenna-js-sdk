@@ -1,10 +1,12 @@
+import { ethers } from 'ethers';
 import { loadClient, output, type CommonFlags } from './util.js';
 
 export async function membersList(appId: number, flags: CommonFlags) {
   const client = loadClient(flags, false);
   const json = flags.json ?? false;
 
-  const addresses = await client.getApplicationMembers(appId);
+  const raw = await client.getApplicationMembers(appId);
+  const addresses = [...new Set(raw)].filter(a => a !== ethers.ZeroAddress);
 
   const members = await Promise.all(
     addresses.map(async (addr) => {

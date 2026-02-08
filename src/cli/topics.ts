@@ -1,3 +1,5 @@
+import { ethers } from 'ethers';
+import { REGISTRY_ABI } from '../contracts.js';
 import { loadClient, output, outputError, type CommonFlags } from './util.js';
 import { AccessLevel } from '../types.js';
 
@@ -96,9 +98,17 @@ export async function topicCreate(
   const tx = await client.createTopic(appId, name, description, level);
   const receipt = await tx.wait();
 
+  let topicId: string | null = null;
+  if (receipt) {
+    const iface = new ethers.Interface(REGISTRY_ABI);
+    const parsed = receipt.logs.map(l => { try { return iface.parseLog(l); } catch { return null; } }).find(l => l?.name === 'TopicCreated');
+    topicId = parsed?.args?.topicId?.toString() ?? null;
+  }
+
   if (json) {
-    output({ txHash: tx.hash, blockNumber: receipt?.blockNumber, appId, access }, true);
+    output({ txHash: tx.hash, blockNumber: receipt?.blockNumber, topicId, appId, access }, true);
   } else {
+    if (topicId) console.log(`Topic created with ID: ${topicId}`);
     console.log(`TX: ${tx.hash}`);
     console.log(`Confirmed in block ${receipt?.blockNumber}`);
   }

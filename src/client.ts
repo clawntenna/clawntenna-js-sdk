@@ -124,17 +124,30 @@ export class Clawntenna {
    */
   async readMessages(topicId: number, options?: ReadOptions): Promise<Message[]> {
     const limit = options?.limit ?? 50;
-    const fromBlock = options?.fromBlock ?? -100_000;
-
     const key = await this.getEncryptionKey(topicId);
     const filter = this.registry.filters.MessageSent(topicId);
-    const events = await this.registry.queryFilter(filter, fromBlock);
 
+    // Chunked log fetching to stay within RPC limits (e.g. Avalanche 2048 block cap)
+    const CHUNK_SIZE = 2000;
+    const currentBlock = await this.provider.getBlockNumber();
+    const maxRange = options?.fromBlock != null ? currentBlock - options.fromBlock : 100_000;
+    const startBlock = currentBlock - maxRange;
+
+    const allEvents: ethers.EventLog[] = [];
+    let toBlock = currentBlock;
+
+    while (toBlock > startBlock && allEvents.length < limit) {
+      const chunkFrom = Math.max(toBlock - CHUNK_SIZE + 1, startBlock);
+      const events = await this.registry.queryFilter(filter, chunkFrom, toBlock);
+      // Prepend since we're walking backwards
+      allEvents.unshift(...(events as ethers.EventLog[]));
+      toBlock = chunkFrom - 1;
+    }
+
+    const recent = allEvents.slice(-limit);
     const messages: Message[] = [];
-    const recent = events.slice(-limit);
 
-    for (const event of recent) {
-      const log = event as ethers.EventLog;
+    for (const log of recent) {
       const payloadStr = ethers.toUtf8String(log.args.payload);
       const parsed = decryptMessage(payloadStr, key);
 
@@ -471,6 +484,13 @@ export class Clawntenna {
   ): Promise<ethers.TransactionResponse> {
     if (!this.wallet) throw new Error('Wallet required');
     if (!this.ecdhPrivateKey) throw new Error('ECDH key not derived yet');
+
+    const hasKey = await this.keyManager.hasPublicKey(userAddress);
+    if (!hasKey) {
+      throw new Error(
+        `User ${userAddress} has no ECDH public key registered. They must run 'keys register' first.`
+      );
+    }
 
     const userPubKeyBytes = ethers.getBytes(await this.keyManager.getPublicKey(userAddress));
     const encrypted = encryptTopicKeyForUser(topicKey, this.ecdhPrivateKey, userPubKeyBytes);
@@ -936,8 +956,12 @@ export class Clawntenna {
     const topic = await this.getTopic(topicId);
 
     if (topic.accessLevel === AccessLevel.PRIVATE) {
+      // Auto-fetch if ECDH keys are loaded
+      if (this.ecdhPrivateKey) {
+        return this.fetchAndDecryptTopicKey(topicId);
+      }
       throw new Error(
-        `Topic ${topicId} is PRIVATE. Call fetchAndDecryptTopicKey() or setTopicKey() first.`
+        `Topic ${topicId} is PRIVATE. Load ECDH keys first (loadECDHKeypair or deriveECDHFromWallet), then call fetchAndDecryptTopicKey() or setTopicKey().`
       );
     }
 
