@@ -33,6 +33,10 @@ export const REGISTRY_ABI = [
 
   // Fees
   'function getTopicMessageFee(uint256 topicId) view returns (address token, uint256 amount)',
+  'function PLATFORM_FEE_BPS() view returns (uint256)',
+  'function PLATFORM_FEE_BPS_V7() view returns (uint256)',
+  'function APP_OWNER_FEE_BPS() view returns (uint256)',
+  'function BPS_DENOMINATOR() view returns (uint256)',
 
   // ===== WRITE FUNCTIONS =====
 
@@ -73,6 +77,7 @@ export const REGISTRY_ABI = [
   'event TopicPermissionSet(uint256 indexed topicId, address indexed user, uint8 permission)',
   'event MessageSent(uint256 indexed topicId, address indexed sender, bytes payload, uint256 timestamp)',
   'event TopicMessageFeeUpdated(uint256 indexed topicId, address token, uint256 amount)',
+  'event FeeCollected(address indexed token, uint256 totalAmount, address indexed recipient, uint256 recipientAmount, address indexed appOwner, uint256 appOwnerAmount, uint256 platformAmount)',
 
   // Agent identity (V5)
   'function registerAgentIdentity(uint256 appId, uint256 tokenId)',

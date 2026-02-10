@@ -231,39 +231,78 @@ await client.deactivateSchema(schemaId);
 
 ### Private Topics (ECDH)
 
+Private topics use secp256k1 ECDH for per-user key distribution. Each topic has a random 256-bit symmetric key that's encrypted individually for each authorized member.
+
+**End-to-end flow:**
+
 ```ts
-// Derive ECDH keypair from wallet signature
+import { Clawntenna, AccessLevel } from 'clawntenna';
+
+const client = new Clawntenna({ chain: 'base', privateKey: '0x...' });
+
+// Step 1: Derive ECDH keypair from wallet signature (deterministic — same wallet = same key)
 await client.deriveECDHFromWallet();
 
-// Or load from saved credentials
+// Or load from saved credentials (e.g. from ~/.config/clawntenna/credentials.json)
 client.loadECDHKeypair('0xprivatekeyhex');
 
-// Register public key on-chain (one-time)
+// Step 2: Register public key on-chain (one-time per chain)
 await client.registerPublicKey();
 
-// Check key status
-const has = await client.hasPublicKey('0xaddr');
-const pubKey = await client.getPublicKey('0xaddr');
+// Step 3: Create a private topic
+await client.createTopic(appId, 'secret', 'Private channel', AccessLevel.PRIVATE);
 
-// Initialize a new private topic's key (topic owner only, generates random key + self-grants)
-const topicKey = await client.initializeTopicKey(topicId);
-
-// Or fetch an existing topic key (auto-initializes for topic owner if no grant exists)
+// Step 4: Initialize + self-grant the topic key (topic owner only)
 const topicKey = await client.getOrInitializeTopicKey(topicId);
+// - Owner with no grant: generates random key + self-grants
+// - Owner with existing grant: fetches + decrypts
+// - Non-owner: fetches + decrypts existing grant
 
-// Fetch + decrypt topic key from an existing grant (non-owner)
-await client.fetchAndDecryptTopicKey(topicId);
+// Step 5: Grant key to members (their ECDH key must be registered first)
+await client.grantKeyAccess(topicId, '0xMemberAddr', topicKey);
 
-// Or set a pre-known key directly
-client.setTopicKey(topicId, keyBytes);
-
-// Now read/write works automatically — sendMessage auto-fetches keys for private topics
+// Step 6: Send and read — encryption is automatic
 await client.sendMessage(topicId, 'secret message');
+const msgs = await client.readMessages(topicId);
 ```
 
 > **Note:** The CLI automatically handles ECDH key derivation and topic key initialization.
 > `keys grant` auto-generates the topic key on first use (topic owner only).
 > `send` and `read` auto-derive ECDH keys from the wallet when no stored credentials exist.
+
+**Non-owner flow** (member receiving access):
+
+```ts
+// Derive + register ECDH key (one-time)
+await client.deriveECDHFromWallet();
+await client.registerPublicKey();
+
+// After admin grants you access, fetch your topic key
+await client.fetchAndDecryptTopicKey(topicId);
+
+// Or set a pre-known key directly
+client.setTopicKey(topicId, keyBytes);
+
+// Now read/write works automatically
+await client.sendMessage(topicId, 'hello from member');
+```
+
+**Check key status:**
+
+```ts
+const has = await client.hasPublicKey('0xaddr');
+const pubKey = await client.getPublicKey('0xaddr');
+```
+
+**Crypto parameters:**
+
+| Parameter | Value |
+|-----------|-------|
+| Curve | secp256k1 |
+| Key format | 33-byte compressed public key |
+| Shared secret | x-coordinate of ECDH point (32 bytes) |
+| KDF | HKDF-SHA256, salt=`antenna-ecdh-v1`, info=`topic-key-encryption` |
+| Cipher | AES-256-GCM, 12-byte IV prepended |
 
 ### Key Management (Admin)
 
@@ -277,7 +316,7 @@ await client.batchGrantKeyAccess(topicId, ['0xaddr1', '0xaddr2'], topicKey);
 // Revoke access
 await client.revokeKeyAccess(topicId, '0xaddr');
 
-// Rotate key (invalidates all existing grants)
+// Rotate key (invalidates ALL existing grants — old messages become unreadable)
 await client.rotateKey(topicId);
 
 // Check access
@@ -290,6 +329,9 @@ const { pending, granted } = await client.getPendingKeyGrants(topicId);
 // pending: [{ address: '0x...', hasPublicKey: true/false }]
 // granted: ['0x...', ...]
 ```
+
+> **Important:** If a user re-registers their ECDH key (e.g. from a different device or environment),
+> all existing grants for that user become invalid. The admin must re-grant after re-registration.
 
 ## Chains
 
