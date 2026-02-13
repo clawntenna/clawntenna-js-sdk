@@ -6,6 +6,7 @@ export {
   AccessLevel,
   Permission,
   Role,
+  DepositStatus,
 } from './types.js';
 export type {
   ChainConfig,
@@ -23,6 +24,9 @@ export type {
   TopicMessageFee,
   SchemaInfo,
   TopicSchemaBinding,
+  EscrowDeposit,
+  EscrowConfig,
+  DepositTimer,
   Credentials,
   CredentialChain,
   CredentialApp,
@@ -50,7 +54,26 @@ export {
 } from './constants.js';
 
 // Contract ABIs
-export { REGISTRY_ABI, KEY_MANAGER_ABI, SCHEMA_REGISTRY_ABI, IDENTITY_REGISTRY_ABI } from './contracts.js';
+export { REGISTRY_ABI, KEY_MANAGER_ABI, SCHEMA_REGISTRY_ABI, IDENTITY_REGISTRY_ABI, ESCROW_ABI } from './contracts.js';
+
+// Helpers
+export { serializeMessage } from './serialize.js';
+export { classifyRpcError } from './rpc-errors.js';
+export { withRetry, isRetryableError, DEFAULT_RETRY } from './retry.js';
+export type { RetryOptions } from './retry.js';
+
+// Escrow timer utilities
+export {
+  formatTimeout,
+  isDepositExpired,
+  timeUntilRefund,
+  getDepositDeadline,
+  isValidTimeout,
+  ESCROW_TIMEOUT_OPTIONS,
+  DEPOSIT_STATUS_LABELS,
+  ESCROW_MIN_TIMEOUT,
+  ESCROW_MAX_TIMEOUT,
+} from './escrow.js';
 
 // Crypto utilities
 export {

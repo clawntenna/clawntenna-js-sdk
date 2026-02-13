@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { CHAINS } from './chains.js';
-import { REGISTRY_ABI, KEY_MANAGER_ABI, SCHEMA_REGISTRY_ABI, IDENTITY_REGISTRY_ABI } from './contracts.js';
+import { REGISTRY_ABI, KEY_MANAGER_ABI, SCHEMA_REGISTRY_ABI, IDENTITY_REGISTRY_ABI, ESCROW_ABI } from './contracts.js';
 import {
   derivePublicTopicKey,
   deriveKeyFromPassphrase,
@@ -18,7 +18,7 @@ import {
   hexToBytes,
 } from './crypto/ecdh.js';
 import { randomBytes } from '@noble/hashes/utils';
-import { AccessLevel } from './types.js';
+import { AccessLevel, DepositStatus } from './types.js';
 import type {
   ClawtennaOptions,
   ReadOptions,
@@ -31,21 +31,48 @@ import type {
   SchemaInfo,
   TopicSchemaBinding,
   ChainName,
+  EscrowDeposit,
+  EscrowConfig,
+  DepositTimer,
 } from './types.js';
+import {
+  formatTimeout,
+  isDepositExpired,
+  timeUntilRefund,
+  getDepositDeadline,
+} from './escrow.js';
+import { classifyRpcError } from './rpc-errors.js';
+import { withRetry } from './retry.js';
 
 export class Clawntenna {
   readonly provider: ethers.JsonRpcProvider;
-  readonly wallet: ethers.Wallet | null;
-  readonly registry: ethers.Contract;
-  readonly keyManager: ethers.Contract;
-  readonly schemaRegistry: ethers.Contract;
-  readonly identityRegistry: ethers.Contract | null;
   readonly chainName: ChainName;
+
+  private _signer: ethers.Signer | null;
+  private _address: string | null;
+  private _registry: ethers.Contract;
+  private _keyManager: ethers.Contract;
+  private _schemaRegistry: ethers.Contract;
+  private _identityRegistry: ethers.Contract | null;
+  private _escrow: ethers.Contract | null;
+
+  /** @deprecated Use `signer` instead. */
+  get wallet(): ethers.Signer | null { return this._signer; }
+  get signer(): ethers.Signer | null { return this._signer; }
+  get registry(): ethers.Contract { return this._registry; }
+  get keyManager(): ethers.Contract { return this._keyManager; }
+  get schemaRegistry(): ethers.Contract { return this._schemaRegistry; }
+  get identityRegistry(): ethers.Contract | null { return this._identityRegistry; }
+  get escrow(): ethers.Contract | null { return this._escrow; }
 
   // In-memory ECDH state
   private ecdhPrivateKey: Uint8Array | null = null;
   private ecdhPublicKey: Uint8Array | null = null;
   private topicKeys: Map<number, Uint8Array> = new Map();
+
+  // Token decimals cache (ERC-20 decimals never change)
+  private tokenDecimalsCache: Map<string, number> = new Map();
+  private static ERC20_DECIMALS_ABI = ['function decimals() view returns (uint8)'];
 
   constructor(options: ClawtennaOptions = {}) {
     const chainName = options.chain ?? 'base';
@@ -59,28 +86,72 @@ export class Clawntenna {
     const registryAddr = options.registryAddress ?? chain.registry;
     const keyManagerAddr = options.keyManagerAddress ?? chain.keyManager;
     const schemaRegistryAddr = options.schemaRegistryAddress ?? chain.schemaRegistry;
+    const escrowAddr = options.escrowAddress ?? chain.escrow;
 
-    if (options.privateKey) {
-      this.wallet = new ethers.Wallet(options.privateKey, this.provider);
-      this.registry = new ethers.Contract(registryAddr, REGISTRY_ABI, this.wallet);
-      this.keyManager = new ethers.Contract(keyManagerAddr, KEY_MANAGER_ABI, this.wallet);
-      this.schemaRegistry = new ethers.Contract(schemaRegistryAddr, SCHEMA_REGISTRY_ABI, this.wallet);
-      this.identityRegistry = chain.identityRegistry
-        ? new ethers.Contract(chain.identityRegistry, IDENTITY_REGISTRY_ABI, this.wallet)
-        : null;
-    } else {
-      this.wallet = null;
-      this.registry = new ethers.Contract(registryAddr, REGISTRY_ABI, this.provider);
-      this.keyManager = new ethers.Contract(keyManagerAddr, KEY_MANAGER_ABI, this.provider);
-      this.schemaRegistry = new ethers.Contract(schemaRegistryAddr, SCHEMA_REGISTRY_ABI, this.provider);
-      this.identityRegistry = chain.identityRegistry
-        ? new ethers.Contract(chain.identityRegistry, IDENTITY_REGISTRY_ABI, this.provider)
-        : null;
+    const wallet = options.privateKey
+      ? new ethers.Wallet(options.privateKey, this.provider)
+      : null;
+    const runner = wallet ?? this.provider;
+
+    this._signer = wallet;
+    this._address = wallet?.address ?? null;
+    this._registry = new ethers.Contract(registryAddr, REGISTRY_ABI, runner);
+    this._keyManager = new ethers.Contract(keyManagerAddr, KEY_MANAGER_ABI, runner);
+    this._schemaRegistry = new ethers.Contract(schemaRegistryAddr, SCHEMA_REGISTRY_ABI, runner);
+    this._identityRegistry = chain.identityRegistry
+      ? new ethers.Contract(chain.identityRegistry, IDENTITY_REGISTRY_ABI, runner)
+      : null;
+    this._escrow = escrowAddr
+      ? new ethers.Contract(escrowAddr, ESCROW_ABI, runner)
+      : null;
+  }
+
+  /**
+   * Connect an external signer (e.g. from BrowserProvider).
+   * Reconnects all contract instances to the new signer.
+   */
+  async connectSigner(signer: ethers.Signer): Promise<void> {
+    this._address = await signer.getAddress();
+    this._signer = signer;
+    this._registry = this._registry.connect(signer) as ethers.Contract;
+    this._keyManager = this._keyManager.connect(signer) as ethers.Contract;
+    this._schemaRegistry = this._schemaRegistry.connect(signer) as ethers.Contract;
+    if (this._identityRegistry) {
+      this._identityRegistry = this._identityRegistry.connect(signer) as ethers.Contract;
+    }
+    if (this._escrow) {
+      this._escrow = this._escrow.connect(signer) as ethers.Contract;
+    }
+  }
+
+  private requireSigner(): ethers.Signer {
+    if (!this._signer) {
+      throw new Error('Signer required. Pass privateKey in constructor or call connectSigner().');
+    }
+    return this._signer;
+  }
+
+  private requireAddress(): string {
+    if (!this._address) {
+      throw new Error('Signer required. Pass privateKey in constructor or call connectSigner().');
+    }
+    return this._address;
+  }
+
+  private async _wrapRpcError<T>(fn: () => Promise<T>, method: string): Promise<T> {
+    try {
+      return await withRetry(fn);
+    } catch (err) {
+      if (err instanceof Error) {
+        const hint = classifyRpcError(err, { method, chainName: this.chainName });
+        if (hint) throw new Error(hint, { cause: err });
+      }
+      throw err;
     }
   }
 
   get address(): string | null {
-    return this.wallet?.address ?? null;
+    return this._address;
   }
 
   // ===== MESSAGING =====
@@ -90,7 +161,15 @@ export class Clawntenna {
    * Automatically determines encryption key based on topic access level.
    */
   async sendMessage(topicId: number, text: string, options?: SendOptions): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required to send messages');
+    this.requireSigner();
+
+    // Auto-check: refuse to reply to a message whose escrow deposit was refunded
+    if (options?.replyTo && this.escrow && !options?.skipRefundCheck) {
+      const refunded = await this.isMessageRefunded(options.replyTo);
+      if (refunded) {
+        throw new Error(`Cannot reply: escrow deposit was refunded (tx: ${options.replyTo})`);
+      }
+    }
 
     let replyText = options?.replyText;
     let replyAuthor = options?.replyAuthor;
@@ -131,7 +210,8 @@ export class Clawntenna {
     // Chunked log fetching to stay within RPC limits (e.g. Avalanche 2048 block cap)
     const CHUNK_SIZE = 2000;
     const currentBlock = await this.provider.getBlockNumber();
-    const maxRange = options?.fromBlock != null ? currentBlock - options.fromBlock : 100_000;
+    const chain = CHAINS[this.chainName];
+    const maxRange = options?.fromBlock != null ? currentBlock - options.fromBlock : chain.defaultLookback;
     const startBlock = currentBlock - maxRange;
 
     const allEvents: ethers.EventLog[] = [];
@@ -139,7 +219,10 @@ export class Clawntenna {
 
     while (toBlock > startBlock && allEvents.length < limit) {
       const chunkFrom = Math.max(toBlock - CHUNK_SIZE + 1, startBlock);
-      const events = await this.registry.queryFilter(filter, chunkFrom, toBlock);
+      const events = await this._wrapRpcError(
+        () => this.registry.queryFilter(filter, chunkFrom, toBlock),
+        'readMessages',
+      );
       // Prepend since we're walking backwards
       allEvents.unshift(...(events as ethers.EventLog[]));
       toBlock = chunkFrom - 1;
@@ -153,12 +236,12 @@ export class Clawntenna {
       const parsed = decryptMessage(payloadStr, key);
 
       messages.push({
-        topicId: BigInt(topicId),
+        topicId,
         sender: log.args.sender,
         text: parsed?.text ?? '[decryption failed]',
         replyTo: parsed?.replyTo ?? null,
         mentions: parsed?.mentions ?? null,
-        timestamp: log.args.timestamp,
+        timestamp: Number(log.args.timestamp),
         txHash: log.transactionHash,
         blockNumber: log.blockNumber,
       });
@@ -194,12 +277,12 @@ export class Clawntenna {
       const parsed = decryptMessage(payloadStr, key);
 
       callback({
-        topicId: tId,
+        topicId: Number(tId),
         sender,
         text: parsed?.text ?? '[decryption failed]',
         replyTo: parsed?.replyTo ?? null,
         mentions: parsed?.mentions ?? null,
-        timestamp,
+        timestamp: Number(timestamp),
         txHash: event.transactionHash,
         blockNumber: event.blockNumber,
       });
@@ -214,7 +297,7 @@ export class Clawntenna {
   // ===== NICKNAMES =====
 
   async setNickname(appId: number, nickname: string): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     return this.registry.setNickname(appId, nickname);
   }
 
@@ -232,12 +315,12 @@ export class Clawntenna {
   }
 
   async clearNickname(appId: number): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     return this.registry.clearNickname(appId);
   }
 
   async setNicknameCooldown(appId: number, cooldownSeconds: number): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     return this.registry.setNicknameCooldown(appId, cooldownSeconds);
   }
 
@@ -253,25 +336,27 @@ export class Clawntenna {
     description: string,
     accessLevel: AccessLevel
   ): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     return this.registry.createTopic(appId, name, description, accessLevel);
   }
 
   async getTopic(topicId: number): Promise<Topic> {
-    const t = await this.registry.getTopic(topicId);
-    return {
-      id: t.id,
-      applicationId: t.applicationId,
-      name: t.name,
-      description: t.description,
-      owner: t.owner,
-      creator: t.creator,
-      createdAt: t.createdAt,
-      lastMessageAt: t.lastMessageAt,
-      messageCount: t.messageCount,
-      accessLevel: Number(t.accessLevel),
-      active: t.active,
-    };
+    return this._wrapRpcError(async () => {
+      const t = await this.registry.getTopic(topicId);
+      return {
+        id: t.id,
+        applicationId: t.applicationId,
+        name: t.name,
+        description: t.description,
+        owner: t.owner,
+        creator: t.creator,
+        createdAt: t.createdAt,
+        lastMessageAt: t.lastMessageAt,
+        messageCount: t.messageCount,
+        accessLevel: Number(t.accessLevel),
+        active: t.active,
+      };
+    }, 'getTopic');
   }
 
   async getApplicationTopics(appId: number): Promise<bigint[]> {
@@ -288,7 +373,7 @@ export class Clawntenna {
     user: string,
     permission: number
   ): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     return this.registry.setTopicPermission(topicId, user, permission);
   }
 
@@ -305,12 +390,12 @@ export class Clawntenna {
     nickname: string,
     roles: number
   ): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     return this.registry.addMember(appId, address, nickname, roles);
   }
 
   async removeMember(appId: number, address: string): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     return this.registry.removeMember(appId, address);
   }
 
@@ -319,7 +404,7 @@ export class Clawntenna {
     address: string,
     roles: number
   ): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     return this.registry.updateMemberRoles(appId, address, roles);
   }
 
@@ -359,7 +444,7 @@ export class Clawntenna {
     frontendUrl: string,
     allowPublicTopicCreation: boolean
   ): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     return this.registry.createApplication(name, description, frontendUrl, allowPublicTopicCreation);
   }
 
@@ -369,26 +454,28 @@ export class Clawntenna {
   }
 
   async updateFrontendUrl(appId: number, frontendUrl: string): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     return this.registry.updateApplicationFrontendUrl(appId, frontendUrl);
   }
 
   async getApplication(appId: number): Promise<Application> {
-    const a = await this.registry.getApplication(appId);
-    return {
-      id: a.id,
-      name: a.name,
-      description: a.description,
-      frontendUrl: a.frontendUrl,
-      owner: a.owner,
-      createdAt: a.createdAt,
-      memberCount: Number(a.memberCount),
-      topicCount: Number(a.topicCount),
-      active: a.active,
-      allowPublicTopicCreation: a.allowPublicTopicCreation,
-      topicCreationFeeToken: a.topicCreationFeeToken,
-      topicCreationFeeAmount: a.topicCreationFeeAmount,
-    };
+    return this._wrapRpcError(async () => {
+      const a = await this.registry.getApplication(appId);
+      return {
+        id: a.id,
+        name: a.name,
+        description: a.description,
+        frontendUrl: a.frontendUrl,
+        owner: a.owner,
+        createdAt: a.createdAt,
+        memberCount: Number(a.memberCount),
+        topicCount: Number(a.topicCount),
+        active: a.active,
+        allowPublicTopicCreation: a.allowPublicTopicCreation,
+        topicCreationFeeToken: a.topicCreationFeeToken,
+        topicCreationFeeAmount: a.topicCreationFeeAmount,
+      };
+    }, 'getApplication');
   }
 
   // ===== FEES =====
@@ -398,22 +485,254 @@ export class Clawntenna {
     return { token, amount };
   }
 
+  /**
+   * Set topic creation fee for an application (app admin only).
+   * feeAmount accepts:
+   *   - bigint: raw token units (e.g. 150000n for 0.15 USDC)
+   *   - string | number: human-readable amount — decimals are auto-resolved from the token contract
+   *     (e.g. '0.15' or 0.15 with USDC → 150000n, '0.01' with native ETH → 10000000000000000n)
+   */
   async setTopicCreationFee(
     appId: number,
     feeToken: string,
-    feeAmount: bigint
+    feeAmount: bigint | string | number
   ): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
-    return this.registry.setTopicCreationFee(appId, feeToken, feeAmount);
+    this.requireSigner();
+    const rawAmount = typeof feeAmount === 'bigint'
+      ? feeAmount
+      : await this.parseTokenAmount(feeToken, feeAmount);
+    return this.registry.setTopicCreationFee(appId, feeToken, rawAmount);
   }
 
+  /**
+   * Set per-message fee for a topic (topic admin only).
+   * feeAmount accepts:
+   *   - bigint: raw token units (e.g. 150000n for 0.15 USDC)
+   *   - string | number: human-readable amount — decimals are auto-resolved from the token contract
+   *     (e.g. '0.15' or 0.15 with USDC → 150000n, '0.01' with native ETH → 10000000000000000n)
+   */
   async setTopicMessageFee(
     topicId: number,
     feeToken: string,
-    feeAmount: bigint
+    feeAmount: bigint | string | number
   ): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
-    return this.registry.setTopicMessageFee(topicId, feeToken, feeAmount);
+    this.requireSigner();
+    const rawAmount = typeof feeAmount === 'bigint'
+      ? feeAmount
+      : await this.parseTokenAmount(feeToken, feeAmount);
+    return this.registry.setTopicMessageFee(topicId, feeToken, rawAmount);
+  }
+
+  // ===== TOKEN AMOUNTS =====
+
+  /**
+   * Get the number of decimals for an ERC-20 token.
+   * Returns 18 for native ETH (address(0)).
+   * Results are cached per token address.
+   */
+  async getTokenDecimals(tokenAddress: string): Promise<number> {
+    if (tokenAddress === ethers.ZeroAddress) return 18;
+
+    const key = tokenAddress.toLowerCase();
+    const cached = this.tokenDecimalsCache.get(key);
+    if (cached !== undefined) return cached;
+
+    const erc20 = new ethers.Contract(tokenAddress, Clawntenna.ERC20_DECIMALS_ABI, this.provider);
+    const decimals = Number(await erc20.decimals());
+    this.tokenDecimalsCache.set(key, decimals);
+    return decimals;
+  }
+
+  /**
+   * Convert a human-readable token amount to raw units (bigint).
+   * Looks up the token's on-chain decimals automatically.
+   *
+   * Examples:
+   *   parseTokenAmount('0xUSDC...', '0.15')  → 150000n       (USDC = 6 decimals)
+   *   parseTokenAmount('0xUSDC...', 10)       → 10000000n     (USDC = 6 decimals)
+   *   parseTokenAmount(ZeroAddress, '0.01')   → 10000000000000000n  (native ETH = 18 decimals)
+   */
+  async parseTokenAmount(tokenAddress: string, amount: string | number): Promise<bigint> {
+    const decimals = await this.getTokenDecimals(tokenAddress);
+    return ethers.parseUnits(String(amount), decimals);
+  }
+
+  /**
+   * Convert raw token units (bigint) to a human-readable string.
+   * Looks up the token's on-chain decimals automatically.
+   *
+   * Examples:
+   *   formatTokenAmount('0xUSDC...', 150000n)  → '0.15'
+   *   formatTokenAmount(ZeroAddress, 10000000000000000n) → '0.01'
+   */
+  async formatTokenAmount(tokenAddress: string, amount: bigint): Promise<string> {
+    const decimals = await this.getTokenDecimals(tokenAddress);
+    return ethers.formatUnits(amount, decimals);
+  }
+
+  // ===== ESCROW =====
+
+  private requireEscrow(): ethers.Contract {
+    if (!this.escrow) {
+      throw new Error('Escrow not available on this chain. Use baseSepolia or pass escrowAddress.');
+    }
+    return this.escrow;
+  }
+
+  /**
+   * Enable escrow for a topic (topic owner only).
+   */
+  async enableEscrow(topicId: number, timeout: number): Promise<ethers.TransactionResponse> {
+    this.requireSigner();
+    return this.requireEscrow().enableEscrow(topicId, timeout);
+  }
+
+  /**
+   * Disable escrow for a topic (topic owner only).
+   */
+  async disableEscrow(topicId: number): Promise<ethers.TransactionResponse> {
+    this.requireSigner();
+    return this.requireEscrow().disableEscrow(topicId);
+  }
+
+  /**
+   * Check if escrow is enabled for a topic.
+   */
+  async isEscrowEnabled(topicId: number): Promise<boolean> {
+    return this.requireEscrow().isEscrowEnabled(topicId);
+  }
+
+  /**
+   * Get escrow config for a topic (enabled + timeout).
+   */
+  async getEscrowConfig(topicId: number): Promise<EscrowConfig> {
+    const escrow = this.requireEscrow();
+    const [enabled, timeout] = await Promise.all([
+      escrow.isEscrowEnabled(topicId) as Promise<boolean>,
+      escrow.topicEscrowTimeout(topicId) as Promise<bigint>,
+    ]);
+    return { enabled, timeout };
+  }
+
+  /**
+   * Get full deposit details by ID.
+   */
+  async getDeposit(depositId: number): Promise<EscrowDeposit> {
+    const d = await this.requireEscrow().getDeposit(depositId);
+    return {
+      id: d.id,
+      topicId: d.topicId,
+      sender: d.sender,
+      recipient: d.recipient,
+      token: d.token,
+      amount: d.amount,
+      appOwner: d.appOwner,
+      depositedAt: d.depositedAt,
+      timeout: d.timeout,
+      status: Number(d.status) as DepositStatus,
+    };
+  }
+
+  /**
+   * Get deposit status (0=Pending, 1=Released, 2=Refunded).
+   */
+  async getDepositStatus(depositId: number): Promise<DepositStatus> {
+    const status = await this.requireEscrow().getDepositStatus(depositId);
+    return Number(status) as DepositStatus;
+  }
+
+  /**
+   * Get pending deposit IDs for a topic.
+   */
+  async getPendingDeposits(topicId: number): Promise<bigint[]> {
+    return this.requireEscrow().getPendingDeposits(topicId);
+  }
+
+  /**
+   * Check if a deposit can be refunded (timeout expired and still pending).
+   */
+  async canClaimRefund(depositId: number): Promise<boolean> {
+    return this.requireEscrow().canClaimRefund(depositId);
+  }
+
+  /**
+   * Claim a refund for a single deposit.
+   */
+  async claimRefund(depositId: number): Promise<ethers.TransactionResponse> {
+    this.requireSigner();
+    return this.requireEscrow().claimRefund(depositId);
+  }
+
+  /**
+   * Batch claim refunds for multiple deposits.
+   */
+  async batchClaimRefunds(depositIds: number[]): Promise<ethers.TransactionResponse> {
+    this.requireSigner();
+    return this.requireEscrow().batchClaimRefunds(depositIds);
+  }
+
+  /**
+   * Parse a transaction receipt to extract the depositId from a DepositRecorded event.
+   * Returns null if no DepositRecorded event is found (e.g. no escrow on this tx).
+   */
+  async getMessageDepositId(txHash: string): Promise<bigint | null> {
+    if (!this.escrow) return null;
+
+    const receipt = await this.provider.getTransactionReceipt(txHash);
+    if (!receipt) return null;
+
+    const iface = this.escrow.interface;
+    for (const log of receipt.logs) {
+      try {
+        const parsed = iface.parseLog(log);
+        if (parsed?.name === 'DepositRecorded') {
+          return parsed.args.depositId;
+        }
+      } catch { /* skip non-matching logs */ }
+    }
+    return null;
+  }
+
+  /**
+   * Get the deposit status for a message by its transaction hash.
+   * Returns null if the message has no associated escrow deposit.
+   */
+  async getMessageDepositStatus(txHash: string): Promise<DepositStatus | null> {
+    const depositId = await this.getMessageDepositId(txHash);
+    if (depositId === null) return null;
+    return this.getDepositStatus(Number(depositId));
+  }
+
+  /**
+   * Check if a message's escrow deposit was refunded.
+   * Returns false if no escrow deposit exists for the tx.
+   */
+  async isMessageRefunded(txHash: string): Promise<boolean> {
+    const status = await this.getMessageDepositStatus(txHash);
+    return status === DepositStatus.Refunded;
+  }
+
+  /**
+   * Get timer info for a deposit — remaining time, expiry status, and claimability.
+   * Useful for building countdown UIs.
+   */
+  async getDepositTimer(depositId: number): Promise<DepositTimer> {
+    const d = await this.getDeposit(depositId);
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const remaining = timeUntilRefund(d.depositedAt, d.timeout, nowSeconds);
+    const expired = remaining === 0;
+    const canClaim = expired && d.status === DepositStatus.Pending
+      ? await this.canClaimRefund(depositId)
+      : false;
+
+    return {
+      depositId: d.id,
+      expired,
+      remainingSeconds: remaining,
+      deadline: getDepositDeadline(d.depositedAt, d.timeout),
+      formattedRemaining: formatTimeout(remaining),
+      canClaim,
+    };
   }
 
   // ===== ECDH (Private Topics) =====
@@ -423,11 +742,12 @@ export class Clawntenna {
    * Requires a signer capable of signing messages.
    */
   async deriveECDHFromWallet(appId: number = 1): Promise<{ publicKey: Uint8Array }> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
 
+    const signer = this._signer!;
     const { privateKey, publicKey } = await deriveKeypairFromSignature(
-      this.wallet.address,
-      (msg) => this.wallet!.signMessage(msg),
+      this.requireAddress(),
+      (msg) => signer.signMessage(msg),
       appId
     );
 
@@ -449,10 +769,10 @@ export class Clawntenna {
    * Register ECDH public key on-chain.
    */
   async registerPublicKey(): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     if (!this.ecdhPublicKey) throw new Error('ECDH key not derived yet');
 
-    const hasKey = await this.keyManager.hasPublicKey(this.wallet.address);
+    const hasKey = await this.keyManager.hasPublicKey(this.requireAddress());
     if (hasKey) {
       throw new Error('Public key already registered on-chain');
     }
@@ -486,7 +806,7 @@ export class Clawntenna {
    * Returns the generated topic key.
    */
   async initializeTopicKey(topicId: number): Promise<Uint8Array> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     if (!this.ecdhPrivateKey || !this.ecdhPublicKey) {
       throw new Error('ECDH key not derived yet');
     }
@@ -498,7 +818,7 @@ export class Clawntenna {
     const encrypted = encryptTopicKeyForUser(topicKey, this.ecdhPrivateKey, this.ecdhPublicKey);
 
     // Store on-chain as a self-grant
-    const tx = await this.keyManager.grantKeyAccess(topicId, this.wallet.address, encrypted);
+    const tx = await this.keyManager.grantKeyAccess(topicId, this.requireAddress(), encrypted);
     await tx.wait();
 
     // Cache locally
@@ -520,9 +840,9 @@ export class Clawntenna {
 
       // Check if we're the topic owner — only owners can initialize
       const topic = await this.getTopic(topicId);
-      if (!this.wallet || topic.owner.toLowerCase() !== this.wallet.address.toLowerCase()) {
+      if (!this._signer || topic.owner.toLowerCase() !== this._address!.toLowerCase()) {
         throw new Error(
-          `No key grant found for topic ${topicId}. Ask the topic owner to grant you access with: keys grant ${topicId} ${this.wallet?.address ?? '<your-address>'}`
+          `No key grant found for topic ${topicId}. Ask the topic owner to grant you access with: keys grant ${topicId} ${this._address ?? '<your-address>'}`
         );
       }
 
@@ -539,7 +859,7 @@ export class Clawntenna {
     userAddress: string,
     topicKey: Uint8Array
   ): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     if (!this.ecdhPrivateKey) throw new Error('ECDH key not derived yet');
 
     const hasKey = await this.keyManager.hasPublicKey(userAddress);
@@ -653,7 +973,7 @@ export class Clawntenna {
     users: string[],
     topicKey: Uint8Array
   ): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     if (!this.ecdhPrivateKey) throw new Error('ECDH key not derived yet');
 
     const encryptedKeys: Uint8Array[] = [];
@@ -670,7 +990,7 @@ export class Clawntenna {
    * Revoke a user's key access for a topic.
    */
   async revokeKeyAccess(topicId: number, address: string): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     return this.keyManager.revokeKeyAccess(topicId, address);
   }
 
@@ -678,7 +998,7 @@ export class Clawntenna {
    * Rotate the key version for a topic. Existing grants become stale.
    */
   async rotateKey(topicId: number): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     return this.keyManager.rotateKey(topicId);
   }
 
@@ -693,7 +1013,7 @@ export class Clawntenna {
     description: string,
     body: string
   ): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     return this.schemaRegistry.createAppSchema(appId, name, description, body);
   }
 
@@ -704,7 +1024,7 @@ export class Clawntenna {
     schemaId: number,
     body: string
   ): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     return this.schemaRegistry.publishSchemaVersion(schemaId, body);
   }
 
@@ -712,7 +1032,7 @@ export class Clawntenna {
    * Deactivate a schema.
    */
   async deactivateSchema(schemaId: number): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     return this.schemaRegistry.deactivateSchema(schemaId);
   }
 
@@ -773,7 +1093,7 @@ export class Clawntenna {
     schemaId: number,
     version: number
   ): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     return this.schemaRegistry.setTopicSchema(topicId, schemaId, version);
   }
 
@@ -781,7 +1101,7 @@ export class Clawntenna {
    * Remove schema binding from a topic.
    */
   async clearTopicSchema(topicId: number): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     return this.schemaRegistry.clearTopicSchema(topicId);
   }
 
@@ -792,7 +1112,7 @@ export class Clawntenna {
    * Verifies ownership via ownerOf on the identity registry.
    */
   async registerAgentIdentity(appId: number, tokenId: number): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     return this.registry.registerAgentIdentity(appId, tokenId);
   }
 
@@ -800,7 +1120,7 @@ export class Clawntenna {
    * Clear your agent identity registration for an application (V5).
    */
   async clearAgentIdentity(appId: number): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     return this.registry.clearAgentIdentity(appId);
   }
 
@@ -834,7 +1154,7 @@ export class Clawntenna {
    * Optionally provide a URI for the agent's metadata.
    */
   async registerAgent(agentURI?: string): Promise<{ agentId: bigint; tx: ethers.TransactionResponse }> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     const registry = this.requireIdentityRegistry();
 
     const tx: ethers.TransactionResponse = agentURI
@@ -865,7 +1185,7 @@ export class Clawntenna {
     agentURI: string,
     metadata: Array<{ metadataKey: string; metadataValue: Uint8Array }>
   ): Promise<{ agentId: bigint; tx: ethers.TransactionResponse }> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     const registry = this.requireIdentityRegistry();
 
     const tx: ethers.TransactionResponse = await registry['register(string,(string,bytes)[])'](agentURI, metadata);
@@ -893,7 +1213,7 @@ export class Clawntenna {
    */
   async isRegisteredAgent(address?: string): Promise<boolean> {
     const registry = this.requireIdentityRegistry();
-    const addr = address ?? this.wallet?.address;
+    const addr = address ?? this._address;
     if (!addr) throw new Error('Address required');
 
     const balance: bigint = await registry.balanceOf(addr);
@@ -923,7 +1243,7 @@ export class Clawntenna {
     key: string,
     value: Uint8Array
   ): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     const registry = this.requireIdentityRegistry();
     return registry.setMetadata(agentId, key, value);
   }
@@ -941,7 +1261,7 @@ export class Clawntenna {
    * Update the URI for an agent registration.
    */
   async setAgentURI(agentId: number, newURI: string): Promise<ethers.TransactionResponse> {
-    if (!this.wallet) throw new Error('Wallet required');
+    this.requireSigner();
     const registry = this.requireIdentityRegistry();
     return registry.setAgentURI(agentId, newURI);
   }

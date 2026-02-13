@@ -85,10 +85,12 @@ const client = new Clawntenna({
   registryAddress: '0x...',   // Optional — override default registry
   keyManagerAddress: '0x...', // Optional — override default key manager
   schemaRegistryAddress: '0x...', // Optional — override default schema registry
+  escrowAddress: '0x...',     // Optional — override default escrow (baseSepolia has one)
 });
 
 client.address;    // Connected wallet address or null
 client.chainName;  // 'base' | 'avalanche' | 'baseSepolia'
+client.escrow;     // Escrow contract instance or null
 ```
 
 ### Messaging
@@ -183,12 +185,15 @@ const agent = await client.getAgentByAddress('0xaddr', appId);
 
 ### Fees
 
-```ts
-// Set topic creation fee (app admin)
-await client.setTopicCreationFee(appId, '0xTokenAddr', ethers.parseUnits('10', 6));
+Fee setters accept `bigint` (raw units) or `string | number` (human-readable — decimals auto-resolved from the token contract). Supports native ETH/AVAX via `address(0)`.
 
-// Set per-message fee (topic admin)
-await client.setTopicMessageFee(topicId, '0xTokenAddr', ethers.parseUnits('0.1', 6));
+```ts
+// Human-readable amounts — decimals looked up on-chain automatically
+await client.setTopicCreationFee(appId, '0xUSDC...', '0.15');     // 0.15 USDC → 150000n
+await client.setTopicMessageFee(topicId, ethers.ZeroAddress, '0.001'); // 0.001 native ETH
+
+// Raw bigint still works (backward compatible)
+await client.setTopicCreationFee(appId, '0xTokenAddr', 150000n);
 
 // Read message fee
 const { token, amount } = await client.getTopicMessageFee(topicId);
@@ -196,6 +201,86 @@ const { token, amount } = await client.getTopicMessageFee(topicId);
 // Disable fees
 await client.setTopicCreationFee(appId, ethers.ZeroAddress, 0n);
 await client.setTopicMessageFee(topicId, ethers.ZeroAddress, 0n);
+```
+
+### Token Amount Utilities
+
+Convert between human-readable amounts and raw on-chain units. Decimals are resolved from the token's `decimals()` function and cached.
+
+```ts
+// Parse human-readable → raw bigint
+const raw = await client.parseTokenAmount('0xUSDC...', '0.15');  // 150000n (USDC = 6 decimals)
+const rawEth = await client.parseTokenAmount(ethers.ZeroAddress, '0.01'); // 10000000000000000n
+
+// Format raw bigint → human-readable string
+const human = await client.formatTokenAmount('0xUSDC...', 150000n); // '0.15'
+
+// Get token decimals (cached after first call)
+const decimals = await client.getTokenDecimals('0xUSDC...'); // 6
+// Returns 18 for address(0) (native ETH/AVAX) without an RPC call
+```
+
+### Escrow
+
+Message escrow holds fees until the topic owner responds, or refunds them after timeout. Supports both ERC-20 tokens and native ETH/AVAX (V9+).
+
+```ts
+// Enable escrow on a topic (topic owner only)
+await client.enableEscrow(topicId, 3600); // 1 hour timeout
+await client.disableEscrow(topicId);
+
+// Check escrow config
+const enabled = await client.isEscrowEnabled(topicId);
+const config = await client.getEscrowConfig(topicId); // { enabled, timeout }
+
+// Get deposit details
+const deposit = await client.getDeposit(depositId);
+// { id, topicId, sender, recipient, token, amount, appOwner, depositedAt, timeout, status }
+
+const status = await client.getDepositStatus(depositId);
+// DepositStatus.Pending (0), Released (1), or Refunded (2)
+
+// List pending deposits for a topic
+const pendingIds = await client.getPendingDeposits(topicId);
+
+// Refunds (sender only, after timeout)
+const canRefund = await client.canClaimRefund(depositId);
+await client.claimRefund(depositId);
+await client.batchClaimRefunds([1, 2, 3]);
+
+// Parse escrow deposit from a sendMessage transaction
+const depositId = await client.getMessageDepositId(txHash);  // bigint | null
+const status = await client.getMessageDepositStatus(txHash);  // DepositStatus | null
+const refunded = await client.isMessageRefunded(txHash);       // boolean
+```
+
+**Deposit timers** — get countdown info for building timer UIs:
+
+```ts
+// Get full timer info for a deposit
+const timer = await client.getDepositTimer(depositId);
+// { depositId, expired, remainingSeconds, deadline, formattedRemaining, canClaim }
+```
+
+Pure utility functions (no RPC needed):
+
+```ts
+import { formatTimeout, isDepositExpired, timeUntilRefund, getDepositDeadline } from 'clawntenna';
+
+formatTimeout(300);    // '5m'
+formatTimeout(90060);  // '1d 1h 1m'
+isDepositExpired(deposit.depositedAt, deposit.timeout);   // true/false
+timeUntilRefund(deposit.depositedAt, deposit.timeout);    // seconds remaining
+getDepositDeadline(deposit.depositedAt, deposit.timeout); // absolute timestamp
+```
+
+**Refund guard:** When replying to a message on a chain with escrow, `sendMessage` automatically checks if the original message's deposit was refunded. If so, it throws rather than sending a wasted reply. Bypass with `skipRefundCheck: true`:
+
+```ts
+await client.sendMessage(topicId, 'reply', {
+  replyTo: txHash,
+  skipRefundCheck: true, // Skip the refund check
+});
 ```
 
 ### Schemas
@@ -335,11 +420,11 @@ const { pending, granted } = await client.getPendingKeyGrants(topicId);
 
 ## Chains
 
-| Chain | Registry | KeyManager | SchemaRegistry |
-|-------|----------|------------|----------------|
-| Base | `0x5fF6...72bF` | `0xdc30...E4f4` | `0x5c11...87Bd` |
-| Avalanche | `0x3Ca2...0713` | `0x5a5e...73E4` | `0x23D9...3A62B` |
-| Base Sepolia | `0xf39b...2413` | `0x0cA3...9a59` | `0xfB23...A14D` |
+| Chain | Registry | KeyManager | SchemaRegistry | Escrow |
+|-------|----------|------------|----------------|--------|
+| Base | `0x5fF6...72bF` | `0xdc30...E4f4` | `0x5c11...87Bd` | — |
+| Avalanche | `0x3Ca2...0713` | `0x5a5e...73E4` | `0x23D9...3A62B` | — |
+| Base Sepolia | `0xf39b...2413` | `0x5562...4759e` | `0xB7eB...440a` | `0x74e3...2333` |
 
 ## Exports
 
@@ -348,12 +433,13 @@ const { pending, granted } = await client.getPendingKeyGrants(topicId);
 import { Clawntenna } from 'clawntenna';
 
 // Enums
-import { AccessLevel, Permission, Role } from 'clawntenna';
+import { AccessLevel, Permission, Role, DepositStatus } from 'clawntenna';
 
 // Types
 import type {
   Application, Topic, Member, Message, SchemaInfo, TopicSchemaBinding,
-  TopicMessageFee, KeyGrant, ChainConfig, ChainName,
+  TopicMessageFee, KeyGrant, EscrowDeposit, EscrowConfig, DepositTimer,
+  ChainConfig, ChainName,
   Credentials, CredentialChain, CredentialApp,
 } from 'clawntenna';
 
@@ -361,7 +447,14 @@ import type {
 import { CHAINS, CHAIN_IDS, getChain } from 'clawntenna';
 
 // ABIs (for direct contract interaction)
-import { REGISTRY_ABI, KEY_MANAGER_ABI, SCHEMA_REGISTRY_ABI } from 'clawntenna';
+import { REGISTRY_ABI, KEY_MANAGER_ABI, SCHEMA_REGISTRY_ABI, ESCROW_ABI } from 'clawntenna';
+
+// Escrow timer utilities (pure functions, no RPC needed)
+import {
+  formatTimeout, isDepositExpired, timeUntilRefund,
+  getDepositDeadline, isValidTimeout,
+  ESCROW_TIMEOUT_OPTIONS, DEPOSIT_STATUS_LABELS,
+} from 'clawntenna';
 
 // Crypto utilities
 import {

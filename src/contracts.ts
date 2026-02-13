@@ -152,6 +152,34 @@ export const IDENTITY_REGISTRY_ABI = [
   'event Registered(uint256 indexed agentId, string agentURI, address indexed owner)',
 ] as const;
 
+export const ESCROW_ABI = [
+  // ===== READ FUNCTIONS =====
+  'function getVersion() pure returns (string)',
+  'function registry() view returns (address)',
+  'function treasury() view returns (address)',
+  'function depositCount() view returns (uint256)',
+  'function isEscrowEnabled(uint256 topicId) view returns (bool)',
+  'function topicEscrowEnabled(uint256 topicId) view returns (bool)',
+  'function topicEscrowTimeout(uint256 topicId) view returns (uint64)',
+  'function getDeposit(uint256 depositId) view returns (uint256 id, uint256 topicId, address sender, address recipient, address token, uint256 amount, address appOwner, uint64 depositedAt, uint64 timeout, uint8 status)',
+  'function getDepositStatus(uint256 depositId) view returns (uint8)',
+  'function getPendingDeposits(uint256 topicId) view returns (uint256[])',
+  'function canClaimRefund(uint256 depositId) view returns (bool)',
+
+  // ===== WRITE FUNCTIONS =====
+  'function enableEscrow(uint256 topicId, uint64 timeoutSeconds)',
+  'function disableEscrow(uint256 topicId)',
+  'function claimRefund(uint256 depositId)',
+  'function batchClaimRefunds(uint256[] depositIds)',
+
+  // ===== EVENTS =====
+  'event EscrowEnabled(uint256 indexed topicId, uint64 timeout)',
+  'event EscrowDisabled(uint256 indexed topicId)',
+  'event DepositRecorded(uint256 indexed depositId, uint256 indexed topicId, address indexed sender, uint256 amount)',
+  'event DepositReleased(uint256 indexed depositId, uint256 indexed topicId, uint256 recipientAmount, uint256 appOwnerAmount, uint256 platformAmount)',
+  'event DepositRefunded(uint256 indexed depositId, uint256 indexed topicId, address indexed sender, uint256 amount)',
+] as const;
+
 export const KEY_MANAGER_ABI = [
   // ===== READ FUNCTIONS =====
   'function hasPublicKey(address user) view returns (bool)',

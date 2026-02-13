@@ -12,10 +12,11 @@ import { schemaCreate, schemaInfo, schemaList, schemaBind, schemaUnbind, schemaT
 import { keysRegister, keysCheck, keysGrant, keysRevoke, keysRotate, keysHas, keysPending } from './keys.js';
 import { subscribe } from './subscribe.js';
 import { feeTopicCreationSet, feeMessageSet, feeMessageGet } from './fees.js';
+import { escrowEnable, escrowDisable, escrowStatus, escrowDeposits, escrowDeposit, escrowRefund, escrowRefundBatch } from './escrow.js';
 import { parseCommonFlags, outputError } from './util.js';
 import { decodeContractError } from './errors.js';
 
-const VERSION = '0.8.6';
+const VERSION = '0.10.2';
 
 const HELP = `
   clawntenna v${VERSION}
@@ -89,6 +90,15 @@ const HELP = `
     fee topic-creation set <appId> <token> <amount> Set topic creation fee
     fee message set <topicId> <token> <amount>     Set message fee
     fee message get <topicId>                      Get message fee
+
+  Escrow:
+    escrow enable <topicId> <timeout>              Enable escrow (topic owner)
+    escrow disable <topicId>                       Disable escrow
+    escrow status <topicId>                        Show escrow config
+    escrow deposits <topicId>                      List pending deposits
+    escrow deposit <depositId>                     Show deposit info
+    escrow refund <depositId>                      Claim refund
+    escrow refund-batch <id1> <id2> ...            Batch refund
 
   Options:
     --chain <base|avalanche|baseSepolia>  Chain to use (default: base)
@@ -489,6 +499,44 @@ async function main() {
           }
         } else {
           outputError(`Unknown fee subcommand: ${sub}. Use: topic-creation, message`, json);
+        }
+        break;
+      }
+
+      // --- Escrow ---
+      case 'escrow': {
+        const sub = args[0];
+        if (sub === 'enable') {
+          const topicId = parseInt(args[1], 10);
+          const timeout = parseInt(args[2], 10);
+          if (isNaN(topicId) || isNaN(timeout)) outputError('Usage: clawntenna escrow enable <topicId> <timeout>', json);
+          await escrowEnable(topicId, timeout, cf);
+        } else if (sub === 'disable') {
+          const topicId = parseInt(args[1], 10);
+          if (isNaN(topicId)) outputError('Usage: clawntenna escrow disable <topicId>', json);
+          await escrowDisable(topicId, cf);
+        } else if (sub === 'status') {
+          const topicId = parseInt(args[1], 10);
+          if (isNaN(topicId)) outputError('Usage: clawntenna escrow status <topicId>', json);
+          await escrowStatus(topicId, cf);
+        } else if (sub === 'deposits') {
+          const topicId = parseInt(args[1], 10);
+          if (isNaN(topicId)) outputError('Usage: clawntenna escrow deposits <topicId>', json);
+          await escrowDeposits(topicId, cf);
+        } else if (sub === 'deposit') {
+          const depositId = parseInt(args[1], 10);
+          if (isNaN(depositId)) outputError('Usage: clawntenna escrow deposit <depositId>', json);
+          await escrowDeposit(depositId, cf);
+        } else if (sub === 'refund') {
+          const depositId = parseInt(args[1], 10);
+          if (isNaN(depositId)) outputError('Usage: clawntenna escrow refund <depositId>', json);
+          await escrowRefund(depositId, cf);
+        } else if (sub === 'refund-batch') {
+          const ids = args.slice(1).map(a => parseInt(a, 10));
+          if (ids.length === 0 || ids.some(isNaN)) outputError('Usage: clawntenna escrow refund-batch <id1> <id2> ...', json);
+          await escrowRefundBatch(ids, cf);
+        } else {
+          outputError(`Unknown escrow subcommand: ${sub}. Use: enable, disable, status, deposits, deposit, refund, refund-batch`, json);
         }
         break;
       }

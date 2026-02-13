@@ -12,7 +12,8 @@ export async function feeTopicCreationSet(
 
   if (!json) console.log(`Setting topic creation fee for app ${appId}...`);
 
-  const tx = await client.setTopicCreationFee(appId, token, BigInt(amount));
+  // Pass amount as string — client auto-resolves decimals from token contract
+  const tx = await client.setTopicCreationFee(appId, token, amount);
   const receipt = await tx.wait();
 
   if (json) {
@@ -34,7 +35,8 @@ export async function feeMessageSet(
 
   if (!json) console.log(`Setting message fee for topic ${topicId}...`);
 
-  const tx = await client.setTopicMessageFee(topicId, token, BigInt(amount));
+  // Pass amount as string — client auto-resolves decimals from token contract
+  const tx = await client.setTopicMessageFee(topicId, token, amount);
   const receipt = await tx.wait();
 
   if (json) {
@@ -58,9 +60,15 @@ export async function feeMessageGet(topicId: number, flags: CommonFlags) {
     if (isZero) {
       console.log(`Topic ${topicId}: no message fee.`);
     } else {
+      // Show both raw and human-readable amounts
+      let formatted = '';
+      try {
+        formatted = await client.formatTokenAmount(fee.token, fee.amount);
+      } catch { /* token may not have decimals() */ }
+
       console.log(`Topic ${topicId} message fee:`);
       console.log(`  Token:  ${fee.token}`);
-      console.log(`  Amount: ${fee.amount}`);
+      console.log(`  Amount: ${fee.amount}${formatted ? ` (${formatted})` : ''}`);
     }
   }
 }

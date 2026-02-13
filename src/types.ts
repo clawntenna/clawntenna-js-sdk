@@ -34,6 +34,8 @@ export interface ChainConfig {
   keyManager: string;
   schemaRegistry: string;
   identityRegistry?: string;
+  escrow?: string;
+  defaultLookback: number;
 }
 
 export type ChainName = 'base' | 'avalanche' | 'baseSepolia';
@@ -103,12 +105,12 @@ export interface EncryptedPayload {
 }
 
 export interface Message {
-  topicId: bigint;
+  topicId: number;
   sender: string;
   text: string;
   replyTo: string | null;
   mentions: string[] | null;
-  timestamp: bigint;
+  timestamp: number;
   txHash: string;
   blockNumber: number;
 }
@@ -135,6 +137,39 @@ export interface TopicSchemaBinding {
   body: string;
 }
 
+export enum DepositStatus {
+  Pending = 0,
+  Released = 1,
+  Refunded = 2,
+}
+
+export interface EscrowDeposit {
+  id: bigint;
+  topicId: bigint;
+  sender: string;
+  recipient: string;
+  token: string;
+  amount: bigint;
+  appOwner: string;
+  depositedAt: bigint;
+  timeout: bigint;
+  status: DepositStatus;
+}
+
+export interface EscrowConfig {
+  enabled: boolean;
+  timeout: bigint;
+}
+
+export interface DepositTimer {
+  depositId: bigint;
+  expired: boolean;
+  remainingSeconds: number;
+  deadline: number;
+  formattedRemaining: string;
+  canClaim: boolean;
+}
+
 // ===== Client options =====
 
 export interface ClawtennaOptions {
@@ -145,6 +180,7 @@ export interface ClawtennaOptions {
   registryAddress?: string;
   keyManagerAddress?: string;
   schemaRegistryAddress?: string;
+  escrowAddress?: string;
 }
 
 export interface ReadOptions {
@@ -157,6 +193,7 @@ export interface SendOptions {
   replyText?: string;
   replyAuthor?: string;
   mentions?: string[];
+  skipRefundCheck?: boolean;
 }
 
 // ===== Credentials =====

@@ -11,6 +11,8 @@ export const CHAINS: Record<ChainName, ChainConfig> = {
     keyManager: '0x5562B553a876CBdc8AA4B3fb0687f22760F4759e',
     schemaRegistry: '0xB7eB50e9058198b99b5b2589E6D70b2d99d5440a',
     identityRegistry: '0x8004AA63c570c570eBF15376c0dB199918BFe9Fb',
+    escrow: '0x74e376C53f4afd5Cd32a77dDc627f477FcFC2333',
+    defaultLookback: 200_000,
   },
   base: {
     chainId: 8453,
@@ -22,6 +24,8 @@ export const CHAINS: Record<ChainName, ChainConfig> = {
     keyManager: '0xdc302ff43a34F6aEa19426D60C9D150e0661E4f4',
     schemaRegistry: '0x5c11d2eA4470eD9025D810A21a885FE16dC987Bd',
     identityRegistry: '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432',
+    escrow: '0x04eC9a25C942192834F447eC9192831B56Ae2D7D',
+    defaultLookback: 200_000,
   },
   avalanche: {
     chainId: 43114,
@@ -33,6 +37,8 @@ export const CHAINS: Record<ChainName, ChainConfig> = {
     keyManager: '0x5a5ea9D408FBA984fFf6e243Dcc71ff6E00C73E4',
     schemaRegistry: '0x23D96e610E8E3DA5341a75B77F1BFF7EA9c3A62B',
     identityRegistry: '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432',
+    escrow: '0x4068245c35a498Da4336aD1Ab0Fb71ef534bfd03',
+    defaultLookback: 500_000,
   },
 };
 
