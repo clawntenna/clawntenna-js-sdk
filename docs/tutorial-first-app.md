@@ -56,11 +56,16 @@ const tx = await client.createApplication(
   'https://example.com',
   true  // Allow public topic creation
 );
-await tx.wait();
+const receipt = await tx.wait();
 
-// Get your app ID
-const appCount = await client.getApplicationCount();
-const APP_ID = Number(appCount);
+// Parse the app ID from the ApplicationCreated event log
+const iface = new (await import('ethers')).Interface([
+  'event ApplicationCreated(uint256 indexed applicationId, string name, address indexed owner)',
+]);
+const log = receipt.logs.find(l => {
+  try { return iface.parseLog(l)?.name === 'ApplicationCreated'; } catch { return false; }
+});
+const APP_ID = Number(iface.parseLog(log).args.applicationId);
 console.log('✅ App created! ID:', APP_ID);
 
 // Create a topic (like a channel)
