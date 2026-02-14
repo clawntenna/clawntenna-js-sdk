@@ -61,6 +61,8 @@ export const REGISTRY_ABI = [
 
   // Messaging
   'function sendMessage(uint256 topicId, bytes payload)',
+  // V10 — deposit-bound response
+  'function respondToDeposits(uint256 topicId, bytes payload, uint256[] depositIds)',
 
   // Fees
   'function setTopicCreationFee(uint256 appId, address feeTokenAddr, uint256 feeAmount)',
@@ -166,11 +168,20 @@ export const ESCROW_ABI = [
   'function getPendingDeposits(uint256 topicId) view returns (uint256[])',
   'function canClaimRefund(uint256 depositId) view returns (bool)',
 
+  // V3
+  'function depositMessageRef(uint256 depositId) view returns (uint256)',
+  'function getDepositMessageRef(uint256 depositId) view returns (uint256)',
+  'function depositResponseRecorded(uint256 depositId) view returns (bool)',
+  'function hasResponse(uint256 depositId) view returns (bool)',
+
   // ===== WRITE FUNCTIONS =====
   'function enableEscrow(uint256 topicId, uint64 timeoutSeconds)',
   'function disableEscrow(uint256 topicId)',
   'function claimRefund(uint256 depositId)',
   'function batchClaimRefunds(uint256[] depositIds)',
+  // V3 — per-deposit release
+  'function releaseDeposit(uint256 depositId, uint256 messageRef)',
+  'function batchReleaseDeposits(uint256[] depositIds, uint256[] messageRefs)',
 
   // ===== EVENTS =====
   'event EscrowEnabled(uint256 indexed topicId, uint64 timeout)',
@@ -178,6 +189,9 @@ export const ESCROW_ABI = [
   'event DepositRecorded(uint256 indexed depositId, uint256 indexed topicId, address indexed sender, uint256 amount)',
   'event DepositReleased(uint256 indexed depositId, uint256 indexed topicId, uint256 recipientAmount, uint256 appOwnerAmount, uint256 platformAmount)',
   'event DepositRefunded(uint256 indexed depositId, uint256 indexed topicId, address indexed sender, uint256 amount)',
+  // V3
+  'event DepositReleasedByOwner(uint256 indexed depositId, uint256 indexed topicId, address indexed releasedBy, uint256 messageRef)',
+  'event DepositResponseRecorded(uint256 indexed depositId, uint256 indexed topicId, address indexed respondedBy)',
 ] as const;
 
 export const KEY_MANAGER_ABI = [

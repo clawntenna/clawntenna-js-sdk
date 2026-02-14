@@ -138,3 +138,55 @@ export async function escrowRefundBatch(depositIds: number[], flags: CommonFlags
     console.log(`Confirmed in block ${receipt?.blockNumber}`);
   }
 }
+
+export async function escrowRespond(topicId: number, depositIds: number[], payload: string, flags: CommonFlags) {
+  const client = loadClient(flags);
+  const json = flags.json ?? false;
+
+  if (!json) console.log(`Responding to deposit(s) [${depositIds.join(', ')}] on topic #${topicId}...`);
+
+  const tx = await client.respondToDeposits(topicId, payload, depositIds);
+  const receipt = await tx.wait();
+
+  if (json) {
+    output({ txHash: tx.hash, blockNumber: receipt?.blockNumber, topicId, depositIds }, true);
+  } else {
+    console.log(`TX: ${tx.hash}`);
+    console.log(`Confirmed in block ${receipt?.blockNumber}`);
+    console.log(`Responded to ${depositIds.length} deposit(s). They can now be released.`);
+  }
+}
+
+export async function escrowRelease(depositId: number, messageRef: number, flags: CommonFlags) {
+  const client = loadClient(flags);
+  const json = flags.json ?? false;
+
+  if (!json) console.log(`Releasing deposit #${depositId}${messageRef ? ` (ref: ${messageRef})` : ''}...`);
+
+  const tx = await client.releaseDeposit(depositId, messageRef);
+  const receipt = await tx.wait();
+
+  if (json) {
+    output({ txHash: tx.hash, blockNumber: receipt?.blockNumber, depositId, messageRef }, true);
+  } else {
+    console.log(`TX: ${tx.hash}`);
+    console.log(`Confirmed in block ${receipt?.blockNumber}`);
+  }
+}
+
+export async function escrowReleaseBatch(depositIds: number[], flags: CommonFlags) {
+  const client = loadClient(flags);
+  const json = flags.json ?? false;
+
+  if (!json) console.log(`Releasing ${depositIds.length} deposits...`);
+
+  const tx = await client.batchReleaseDeposits(depositIds);
+  const receipt = await tx.wait();
+
+  if (json) {
+    output({ txHash: tx.hash, blockNumber: receipt?.blockNumber, depositIds }, true);
+  } else {
+    console.log(`TX: ${tx.hash}`);
+    console.log(`Confirmed in block ${receipt?.blockNumber}`);
+  }
+}

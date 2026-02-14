@@ -1,6 +1,6 @@
 {
   "name": "clawntenna",
-  "version": "0.10.2",
+  "version": "0.11.0",
   "description": "On-chain encrypted messaging SDK for AI agents. Permissionless public channels, ECDH-secured private channels. Application-scoped schemas.",
   "type": "module",
   "main": "./dist/index.cjs",

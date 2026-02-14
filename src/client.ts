@@ -672,6 +672,55 @@ export class Clawntenna {
   }
 
   /**
+   * Respond to specific deposits by sending a message and binding it on-chain (topic owner only).
+   * This creates an auditable record: "at block X, owner sent message Y for deposits [a, b, c]".
+   * Each deposit must have a recorded response before it can be released.
+   * @param topicId Topic ID
+   * @param payload Message payload (encrypted response)
+   * @param depositIds Array of deposit IDs being responded to
+   */
+  async respondToDeposits(topicId: number, payload: string | Uint8Array, depositIds: number[]): Promise<ethers.TransactionResponse> {
+    this.requireSigner();
+    return this.registry.respondToDeposits(topicId, payload, depositIds);
+  }
+
+  /**
+   * Release a single escrow deposit (topic owner only).
+   * Requires a prior respondToDeposits() call for this deposit.
+   * @param depositId Deposit ID to release
+   * @param messageRef Optional off-chain message reference (default 0)
+   */
+  async releaseDeposit(depositId: number, messageRef: number = 0): Promise<ethers.TransactionResponse> {
+    this.requireSigner();
+    return this.requireEscrow().releaseDeposit(depositId, messageRef);
+  }
+
+  /**
+   * Batch release escrow deposits (topic owner only, max 50).
+   * Requires a prior respondToDeposits() call for each deposit.
+   * @param depositIds Array of deposit IDs to release
+   * @param messageRefs Optional array of off-chain references (empty or same length)
+   */
+  async batchReleaseDeposits(depositIds: number[], messageRefs: number[] = []): Promise<ethers.TransactionResponse> {
+    this.requireSigner();
+    return this.requireEscrow().batchReleaseDeposits(depositIds, messageRefs);
+  }
+
+  /**
+   * Get the message reference for a released deposit.
+   */
+  async getDepositMessageRef(depositId: number): Promise<bigint> {
+    return this.requireEscrow().getDepositMessageRef(depositId);
+  }
+
+  /**
+   * Check if a deposit has a recorded owner response.
+   */
+  async hasResponse(depositId: number): Promise<boolean> {
+    return this.requireEscrow().hasResponse(depositId);
+  }
+
+  /**
    * Parse a transaction receipt to extract the depositId from a DepositRecorded event.
    * Returns null if no DepositRecorded event is found (e.g. no escrow on this tx).
    */

@@ -222,7 +222,9 @@ const decimals = await client.getTokenDecimals('0xUSDC...'); // 6
 
 ### Escrow
 
-Message escrow holds fees until the topic owner responds, or refunds them after timeout. Supports both ERC-20 tokens and native ETH/AVAX (V9+).
+Message escrow holds fees until the topic owner explicitly responds to specific deposits and releases them, or refunds them after timeout. Supports both ERC-20 tokens and native ETH/AVAX (V9+).
+
+**V10 deposit-bound responses:** Topic owners must explicitly name which deposit(s) they're responding to. This creates an on-chain auditable binding — one reply does not release all deposits.
 
 ```ts
 // Enable escrow on a topic (topic owner only)
@@ -242,6 +244,16 @@ const status = await client.getDepositStatus(depositId);
 
 // List pending deposits for a topic
 const pendingIds = await client.getPendingDeposits(topicId);
+
+// Step 1: Respond to specific deposits (sends message + binds to deposit IDs)
+await client.respondToDeposits(topicId, '0xpayload', [depositId1, depositId2]);
+
+// Step 2: Check response status
+const responded = await client.hasResponse(depositId);  // boolean
+
+// Step 3: Release responded deposits (topic owner only)
+await client.releaseDeposit(depositId, 0);  // messageRef is optional (0 = none)
+await client.batchReleaseDeposits([1, 2, 3]);
 
 // Refunds (sender only, after timeout)
 const canRefund = await client.canClaimRefund(depositId);
