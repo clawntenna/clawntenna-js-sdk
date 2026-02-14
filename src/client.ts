@@ -18,7 +18,7 @@ import {
   hexToBytes,
 } from './crypto/ecdh.js';
 import { randomBytes } from '@noble/hashes/utils';
-import { AccessLevel, DepositStatus } from './types.js';
+import { AccessLevel, DepositStatus, Permission, Role } from './types.js';
 import type {
   ClawtennaOptions,
   ReadOptions,
@@ -199,7 +199,65 @@ export class Clawntenna {
       mentions: options?.mentions,
     });
 
-    return this.registry.sendMessage(topicId, ethers.toUtf8Bytes(encrypted));
+    // Resolve message fee and attach msg.value for native ETH fees
+    const txOverrides: { value?: bigint } = {};
+    try {
+      const fee = await this.getTopicMessageFee(topicId);
+      if (fee.amount > BigInt(0)) {
+        const exempt = await this._isFeeExempt(topicId);
+        if (!exempt) {
+          if (fee.token === ethers.ZeroAddress) {
+            txOverrides.value = fee.amount;
+          } else {
+            // ERC-20: ensure allowance (auto-approve for the exact amount)
+            const token = new ethers.Contract(fee.token, [
+              'function allowance(address,address) view returns (uint256)',
+              'function approve(address,uint256) returns (bool)',
+            ], this._signer!);
+            const registryAddr = await this._registry.getAddress();
+            const allowance: bigint = await token.allowance(this._address!, registryAddr);
+            if (allowance < fee.amount) {
+              const approveTx = await token.approve(registryAddr, fee.amount);
+              await approveTx.wait();
+            }
+          }
+        }
+      }
+    } catch {
+      // Non-fatal: if fee check fails, let the contract revert with a clear error
+    }
+
+    return this.registry.sendMessage(topicId, ethers.toUtf8Bytes(encrypted), txOverrides);
+  }
+
+  /**
+   * Check if the current signer is exempt from message fees on a topic.
+   * Mirrors contract logic: topic owner, app owner, ROLE_ADMIN, PERMISSION_ADMIN.
+   */
+  private async _isFeeExempt(topicId: number): Promise<boolean> {
+    const addr = this._address!.toLowerCase();
+    const topic = await this.getTopic(topicId);
+
+    if (topic.owner.toLowerCase() === addr) return true;
+
+    const app = await this.getApplication(Number(topic.applicationId));
+    if (app.owner.toLowerCase() === addr) return true;
+
+    try {
+      const member = await this.getMember(Number(topic.applicationId), this._address!);
+      if ((member.roles & Role.ADMIN) !== 0) return true;
+    } catch {
+      // Not a member — not exempt via role
+    }
+
+    try {
+      const perm = await this.getTopicPermission(topicId, this._address!);
+      if (perm === Permission.ADMIN) return true;
+    } catch {
+      // No permission set
+    }
+
+    return false;
   }
 
   /**
@@ -340,7 +398,33 @@ export class Clawntenna {
     accessLevel: AccessLevel
   ): Promise<ethers.TransactionResponse> {
     this.requireSigner();
-    return this.registry.createTopic(appId, name, description, accessLevel);
+
+    // Resolve topic creation fee and attach msg.value for native ETH
+    const txOverrides: { value?: bigint } = {};
+    try {
+      const app = await this.getApplication(appId);
+      const feeAmount = app.topicCreationFeeAmount ?? BigInt(0);
+      const feeToken = app.topicCreationFeeToken ?? ethers.ZeroAddress;
+      if (feeAmount > BigInt(0) && feeToken === ethers.ZeroAddress) {
+        txOverrides.value = feeAmount;
+      } else if (feeAmount > BigInt(0)) {
+        // ERC-20: auto-approve
+        const token = new ethers.Contract(feeToken, [
+          'function allowance(address,address) view returns (uint256)',
+          'function approve(address,uint256) returns (bool)',
+        ], this._signer!);
+        const registryAddr = await this._registry.getAddress();
+        const allowance: bigint = await token.allowance(this._address!, registryAddr);
+        if (allowance < feeAmount) {
+          const approveTx = await token.approve(registryAddr, feeAmount);
+          await approveTx.wait();
+        }
+      }
+    } catch {
+      // Non-fatal
+    }
+
+    return this.registry.createTopic(appId, name, description, accessLevel, txOverrides);
   }
 
   async getTopic(topicId: number): Promise<Topic> {
