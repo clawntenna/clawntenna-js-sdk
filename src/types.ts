@@ -170,6 +170,37 @@ export interface DepositTimer {
   canClaim: boolean;
 }
 
+export interface EnrichedDeposit extends EscrowDeposit {
+  txHash: string;
+  blockNumber: number;
+  messageText: string | null;
+  hasResponse: boolean;
+  remainingSeconds: number;
+  formattedRemaining: string;
+  expired: boolean;
+  formattedAmount: string | null;
+}
+
+// ===== Credibility (V4) =====
+
+export interface RecipientStats {
+  depositsReceived: bigint;
+  depositsReleased: bigint;
+  depositsRefunded: bigint;
+  depositsExpired: bigint;
+}
+
+export interface WalletCredibility {
+  responseRate: number;        // 0-100 (percentage, converted from basis points)
+  depositsReceived: bigint;
+  depositsReleased: bigint;
+  depositsRefunded: bigint;
+  totalEarned: bigint;
+  totalRefunded: bigint;
+  formattedEarned: string | null;
+  formattedRefunded: string | null;
+}
+
 // ===== Client options =====
 
 export interface ClawtennaOptions {

@@ -1,4 +1,6 @@
 import { loadClient, output, outputError, type CommonFlags } from './util.js';
+import { loadCredentials } from './init.js';
+import { chainIdForCredentials } from './util.js';
 
 const STATUS_LABELS = ['Pending', 'Released', 'Refunded'] as const;
 
@@ -189,4 +191,119 @@ export async function escrowReleaseBatch(depositIds: number[], flags: CommonFlag
     console.log(`TX: ${tx.hash}`);
     console.log(`Confirmed in block ${receipt?.blockNumber}`);
   }
+}
+
+export async function escrowInbox(topicId: number, flags: CommonFlags) {
+  const client = loadClient(flags, false);
+  const json = flags.json ?? false;
+
+  // Load ECDH keys for decryption if available
+  const creds = loadCredentials();
+  if (creds) {
+    const chainKey = chainIdForCredentials(flags.chain);
+    const ecdhKey = creds.chains?.[chainKey]?.ecdh?.privateKey;
+    if (ecdhKey) {
+      client.loadECDHKeypair(ecdhKey);
+      // Load topic keys from credentials
+      const apps = creds.chains?.[chainKey]?.apps;
+      if (apps) {
+        for (const app of Object.values(apps)) {
+          for (const [tId, key] of Object.entries(app.topicKeys || {})) {
+            client.setTopicKey(Number(tId), Buffer.from(key, 'hex'));
+          }
+        }
+      }
+    }
+  }
+
+  if (!json) console.log(`Loading inbox for topic #${topicId}...`);
+
+  const inbox = await client.getEscrowInbox(topicId);
+
+  if (json) {
+    output({
+      topicId,
+      count: inbox.length,
+      deposits: inbox.map(d => ({
+        id: d.id.toString(),
+        sender: d.sender,
+        token: d.token,
+        amount: d.amount.toString(),
+        formattedAmount: d.formattedAmount,
+        depositedAt: d.depositedAt.toString(),
+        txHash: d.txHash,
+        blockNumber: d.blockNumber,
+        messageText: d.messageText,
+        hasResponse: d.hasResponse,
+        remainingSeconds: d.remainingSeconds,
+        formattedRemaining: d.formattedRemaining,
+        expired: d.expired,
+        status: d.status,
+      })),
+    }, true);
+    return;
+  }
+
+  if (inbox.length === 0) {
+    console.log(`Topic #${topicId} inbox: empty (no pending deposits).`);
+    return;
+  }
+
+  console.log(`\nTopic #${topicId} inbox (${inbox.length} pending):\n`);
+
+  for (const d of inbox) {
+    const icon = d.hasResponse ? '\u2713' : '\u25CB';
+    const amountStr = d.formattedAmount
+      ? (d.token === '0x0000000000000000000000000000000000000000' ? `${d.formattedAmount} ETH` : d.formattedAmount)
+      : d.amount.toString();
+    const ago = formatAgo(Number(d.depositedAt));
+    const timerStr = d.expired ? 'EXPIRED' : `${d.formattedRemaining} left`;
+
+    console.log(`  #${d.id}  ${icon}  ${amountStr}  ${ago}  [${timerStr}]`);
+    console.log(`    From: ${d.sender}`);
+    if (d.messageText) {
+      const truncated = d.messageText.length > 80 ? d.messageText.slice(0, 77) + '...' : d.messageText;
+      console.log(`    Msg:  ${truncated}`);
+    }
+    console.log();
+  }
+}
+
+export async function escrowStats(address: string, flags: CommonFlags) {
+  const client = loadClient(flags, false);
+  const json = flags.json ?? false;
+
+  const cred = await client.getWalletCredibility(address);
+
+  if (json) {
+    output({
+      address,
+      responseRate: cred.responseRate,
+      depositsReceived: cred.depositsReceived.toString(),
+      depositsReleased: cred.depositsReleased.toString(),
+      depositsRefunded: cred.depositsRefunded.toString(),
+      totalEarned: cred.totalEarned.toString(),
+      totalRefunded: cred.totalRefunded.toString(),
+      formattedEarned: cred.formattedEarned,
+      formattedRefunded: cred.formattedRefunded,
+    }, true);
+    return;
+  }
+
+  const shortAddr = address.slice(0, 6) + '...' + address.slice(-4);
+  console.log(`\nEscrow stats for ${shortAddr}:\n`);
+  console.log(`  Response rate:     ${cred.responseRate.toFixed(1)}%`);
+  console.log(`  Deposits received: ${cred.depositsReceived}`);
+  console.log(`  Released: ${cred.depositsReleased}  |  Refunded: ${cred.depositsRefunded}`);
+  console.log(`  Total earned:      ${cred.formattedEarned ?? cred.totalEarned.toString()} ETH`);
+  console.log(`  Total refunded:    ${cred.formattedRefunded ?? cred.totalRefunded.toString()} ETH`);
+  console.log();
+}
+
+function formatAgo(epochSeconds: number): string {
+  const diff = Math.floor(Date.now() / 1000) - epochSeconds;
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
 }

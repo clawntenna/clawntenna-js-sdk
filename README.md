@@ -266,6 +266,23 @@ const status = await client.getMessageDepositStatus(txHash);  // DepositStatus |
 const refunded = await client.isMessageRefunded(txHash);       // boolean
 ```
 
+**Escrow inbox** — reverse lookup deposits to their linked messages:
+
+```ts
+// Get all pending deposits enriched with message text, timers, and response status
+const inbox = await client.getEscrowInbox(topicId);
+// Returns: EnrichedDeposit[] (sorted newest-first)
+// Each has: txHash, blockNumber, messageText, hasResponse, remainingSeconds,
+//           formattedRemaining, expired, formattedAmount + all EscrowDeposit fields
+
+// Reverse lookup: deposit ID → transaction hash
+const txHash = await client.getDepositTxHash(depositId); // string | null
+
+// Full reverse lookup: deposit ID → message with decrypted text
+const result = await client.getDepositMessage(depositId);
+// { txHash: string, message: Message } | null
+```
+
 **Deposit timers** — get countdown info for building timer UIs:
 
 ```ts
@@ -450,7 +467,7 @@ import { AccessLevel, Permission, Role, DepositStatus } from 'clawntenna';
 // Types
 import type {
   Application, Topic, Member, Message, SchemaInfo, TopicSchemaBinding,
-  TopicMessageFee, KeyGrant, EscrowDeposit, EscrowConfig, DepositTimer,
+  TopicMessageFee, KeyGrant, EscrowDeposit, EscrowConfig, DepositTimer, EnrichedDeposit,
   ChainConfig, ChainName,
   Credentials, CredentialChain, CredentialApp,
 } from 'clawntenna';

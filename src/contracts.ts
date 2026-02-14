@@ -192,6 +192,14 @@ export const ESCROW_ABI = [
   // V3
   'event DepositReleasedByOwner(uint256 indexed depositId, uint256 indexed topicId, address indexed releasedBy, uint256 messageRef)',
   'event DepositResponseRecorded(uint256 indexed depositId, uint256 indexed topicId, address indexed respondedBy)',
+
+  // V4 — on-chain accumulators + credibility
+  'function getRecipientStats(address wallet) view returns (tuple(uint64 depositsReceived, uint64 depositsReleased, uint64 depositsRefunded, uint64 depositsExpired))',
+  'function getResponseRate(address wallet) view returns (uint256)',
+  'function getCredibility(address wallet) view returns (uint256 responseRate, uint64 depositsReceived, uint64 depositsReleased, uint64 depositsRefunded, uint256 totalEarned, uint256 totalRefunded)',
+  'function amountEarned(address wallet) view returns (uint256)',
+  'function amountRefunded(address wallet) view returns (uint256)',
+  'event RecipientStatsUpdated(address indexed wallet, uint64 received, uint64 released, uint64 refunded)',
 ] as const;
 
 export const KEY_MANAGER_ABI = [

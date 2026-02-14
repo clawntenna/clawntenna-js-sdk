@@ -12,11 +12,11 @@ import { schemaCreate, schemaInfo, schemaList, schemaBind, schemaUnbind, schemaT
 import { keysRegister, keysCheck, keysGrant, keysRevoke, keysRotate, keysHas, keysPending } from './keys.js';
 import { subscribe } from './subscribe.js';
 import { feeTopicCreationSet, feeMessageSet, feeMessageGet } from './fees.js';
-import { escrowEnable, escrowDisable, escrowStatus, escrowDeposits, escrowDeposit, escrowRefund, escrowRefundBatch, escrowRespond, escrowRelease, escrowReleaseBatch } from './escrow.js';
+import { escrowEnable, escrowDisable, escrowStatus, escrowDeposits, escrowDeposit, escrowRefund, escrowRefundBatch, escrowRespond, escrowRelease, escrowReleaseBatch, escrowInbox, escrowStats } from './escrow.js';
 import { parseCommonFlags, outputError } from './util.js';
 import { decodeContractError } from './errors.js';
 
-const VERSION = '0.11.0';
+const VERSION = '0.11.2';
 
 const HELP = `
   clawntenna v${VERSION}
@@ -95,11 +95,13 @@ const HELP = `
     escrow enable <topicId> <timeout>              Enable escrow (topic owner)
     escrow disable <topicId>                       Disable escrow
     escrow status <topicId>                        Show escrow config
-    escrow deposits <topicId>                      List pending deposits
+    escrow inbox <topicId>                         Show pending deposits with linked messages
+    escrow deposits <topicId>                      List pending deposit IDs
     escrow deposit <depositId>                     Show deposit info
     escrow respond <topicId> <id1> [id2...] --payload 0x  Respond to deposits (topic owner)
     escrow release <depositId> [--ref N]            Release deposit (topic owner)
     escrow release-batch <id1> <id2> ...           Batch release deposits
+    escrow stats <address>                         Show wallet credibility & escrow stats
     escrow refund <depositId>                      Claim refund
     escrow refund-batch <id1> <id2> ...            Batch refund
 
@@ -509,7 +511,11 @@ async function main() {
       // --- Escrow ---
       case 'escrow': {
         const sub = args[0];
-        if (sub === 'enable') {
+        if (sub === 'inbox') {
+          const topicId = parseInt(args[1], 10);
+          if (isNaN(topicId)) outputError('Usage: clawntenna escrow inbox <topicId>', json);
+          await escrowInbox(topicId, cf);
+        } else if (sub === 'enable') {
           const topicId = parseInt(args[1], 10);
           const timeout = parseInt(args[2], 10);
           if (isNaN(topicId) || isNaN(timeout)) outputError('Usage: clawntenna escrow enable <topicId> <timeout>', json);
@@ -554,8 +560,12 @@ async function main() {
           const ids = args.slice(1).map(a => parseInt(a, 10));
           if (ids.length === 0 || ids.some(isNaN)) outputError('Usage: clawntenna escrow refund-batch <id1> <id2> ...', json);
           await escrowRefundBatch(ids, cf);
+        } else if (sub === 'stats') {
+          const address = args[1];
+          if (!address) outputError('Usage: clawntenna escrow stats <address>', json);
+          await escrowStats(address, cf);
         } else {
-          outputError(`Unknown escrow subcommand: ${sub}. Use: enable, disable, status, deposits, deposit, release, release-batch, refund, refund-batch`, json);
+          outputError(`Unknown escrow subcommand: ${sub}. Use: inbox, enable, disable, status, stats, deposits, deposit, respond, release, release-batch, refund, refund-batch`, json);
         }
         break;
       }

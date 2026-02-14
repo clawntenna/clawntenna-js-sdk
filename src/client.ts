@@ -34,6 +34,9 @@ import type {
   EscrowDeposit,
   EscrowConfig,
   DepositTimer,
+  EnrichedDeposit,
+  RecipientStats,
+  WalletCredibility,
 } from './types.js';
 import {
   formatTimeout,
@@ -721,6 +724,75 @@ export class Clawntenna {
   }
 
   /**
+   * Get lifetime escrow stats for a wallet (V4).
+   */
+  async getRecipientStats(wallet: string): Promise<RecipientStats> {
+    const s = await this.requireEscrow().getRecipientStats(wallet);
+    return {
+      depositsReceived: BigInt(s.depositsReceived),
+      depositsReleased: BigInt(s.depositsReleased),
+      depositsRefunded: BigInt(s.depositsRefunded),
+      depositsExpired: BigInt(s.depositsExpired),
+    };
+  }
+
+  /**
+   * Get credibility snapshot for a wallet (V4).
+   * Returns response rate as 0-100 percentage and lifetime escrow totals.
+   */
+  async getWalletCredibility(wallet: string): Promise<WalletCredibility> {
+    const escrow = this.requireEscrow();
+    const cred = await escrow.getCredibility(wallet);
+
+    // Convert basis points to percentage
+    const responseRate = Number(cred.responseRate) / 100;
+
+    // Try to format amounts using the first deposit's token, fall back to null
+    let formattedEarned: string | null = null;
+    let formattedRefunded: string | null = null;
+    try {
+      // For native ETH (most common), format as ether
+      formattedEarned = ethers.formatEther(cred.totalEarned);
+      formattedRefunded = ethers.formatEther(cred.totalRefunded);
+    } catch {
+      // Non-fatal
+    }
+
+    return {
+      responseRate,
+      depositsReceived: BigInt(cred.depositsReceived),
+      depositsReleased: BigInt(cred.depositsReleased),
+      depositsRefunded: BigInt(cred.depositsRefunded),
+      totalEarned: BigInt(cred.totalEarned),
+      totalRefunded: BigInt(cred.totalRefunded),
+      formattedEarned,
+      formattedRefunded,
+    };
+  }
+
+  /**
+   * Get the on-chain total amount earned by a wallet via escrow releases (V4).
+   */
+  async getAmountEarned(wallet: string): Promise<bigint> {
+    return this.requireEscrow().amountEarned(wallet);
+  }
+
+  /**
+   * Get the on-chain total amount lost to refunds for a wallet (V4).
+   */
+  async getAmountRefunded(wallet: string): Promise<bigint> {
+    return this.requireEscrow().amountRefunded(wallet);
+  }
+
+  /**
+   * Get response rate for a wallet as basis points (0-10000) (V4).
+   */
+  async getResponseRate(wallet: string): Promise<number> {
+    const rate = await this.requireEscrow().getResponseRate(wallet);
+    return Number(rate);
+  }
+
+  /**
    * Parse a transaction receipt to extract the depositId from a DepositRecorded event.
    * Returns null if no DepositRecorded event is found (e.g. no escrow on this tx).
    */
@@ -782,6 +854,195 @@ export class Clawntenna {
       formattedRemaining: formatTimeout(remaining),
       canClaim,
     };
+  }
+
+  // ===== PRIVATE HELPERS =====
+
+  /**
+   * Query contract events in chunked ranges to stay within public RPC limits.
+   */
+  private async _queryFilterChunked(
+    contract: ethers.BaseContract,
+    filter: ethers.ContractEventName,
+    fromBlock: number,
+    toBlock: number,
+    chunkSize = 10_000,
+  ): Promise<ethers.EventLog[]> {
+    const results: ethers.EventLog[] = [];
+    for (let start = fromBlock; start <= toBlock; start += chunkSize) {
+      const end = Math.min(start + chunkSize - 1, toBlock);
+      const chunk = await this._wrapRpcError(
+        () => contract.queryFilter(filter, start, end),
+        'queryFilterChunked',
+      );
+      results.push(...(chunk as ethers.EventLog[]));
+    }
+    return results;
+  }
+
+  // ===== ESCROW INBOX (deposit → message bridge) =====
+
+  /**
+   * Reverse lookup: find the transaction hash that created a deposit.
+   * Queries DepositRecorded events filtered by depositId (first indexed param).
+   */
+  async getDepositTxHash(depositId: number): Promise<string | null> {
+    const escrow = this.requireEscrow();
+    const chain = CHAINS[this.chainName];
+    const currentBlock = await this.provider.getBlockNumber();
+    const startBlock = currentBlock - chain.defaultLookback;
+
+    const filter = escrow.filters.DepositRecorded(depositId);
+    const events = await this._queryFilterChunked(escrow, filter, startBlock, currentBlock);
+
+    if (events.length === 0) return null;
+    return (events[0] as ethers.EventLog).transactionHash;
+  }
+
+  /**
+   * Full reverse lookup: deposit → tx hash → tx receipt → parse MessageSent → decrypt.
+   * Returns the tx hash and decoded message, or null if the deposit event isn't found.
+   */
+  async getDepositMessage(depositId: number): Promise<{ txHash: string; message: Message } | null> {
+    const txHash = await this.getDepositTxHash(depositId);
+    if (!txHash) return null;
+
+    const receipt = await this.provider.getTransactionReceipt(txHash);
+    if (!receipt) return null;
+
+    const msg = await this._parseMessageFromReceipt(receipt);
+    if (!msg) return null;
+
+    return { txHash, message: msg };
+  }
+
+  /**
+   * Get the "inbox" — all pending deposits for a topic, enriched with their linked messages.
+   * Sorted newest-first by depositedAt.
+   */
+  async getEscrowInbox(topicId: number): Promise<EnrichedDeposit[]> {
+    const escrow = this.requireEscrow();
+    const chain = CHAINS[this.chainName];
+
+    // 1. Get pending deposit IDs
+    const depositIds = await this.getPendingDeposits(topicId);
+    if (depositIds.length === 0) return [];
+
+    // 2. Fetch deposit structs
+    const deposits = await Promise.all(
+      depositIds.map(id => this.getDeposit(Number(id)))
+    );
+
+    // 3. Single event query to build depositId → txHash map
+    const currentBlock = await this.provider.getBlockNumber();
+    const startBlock = currentBlock - chain.defaultLookback;
+    const topicFilter = escrow.filters.DepositRecorded(null, topicId);
+    const events = await this._queryFilterChunked(escrow, topicFilter, startBlock, currentBlock);
+    const txHashMap = new Map<string, { txHash: string; blockNumber: number }>();
+    for (const evt of events as ethers.EventLog[]) {
+      const id = evt.args.depositId.toString();
+      txHashMap.set(id, { txHash: evt.transactionHash, blockNumber: evt.blockNumber });
+    }
+
+    // 4. Check response status for all deposits
+    const responseStatuses = await Promise.all(
+      depositIds.map(id => this.hasResponse(Number(id)).catch(() => false))
+    );
+
+    // 5. Fetch receipts and parse messages
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const enriched: EnrichedDeposit[] = [];
+
+    for (let i = 0; i < deposits.length; i++) {
+      const deposit = deposits[i];
+      const idStr = deposit.id.toString();
+      const eventInfo = txHashMap.get(idStr);
+      const txHash = eventInfo?.txHash ?? '';
+      const blockNumber = eventInfo?.blockNumber ?? 0;
+
+      // Parse message from receipt
+      let messageText: string | null = null;
+      if (txHash) {
+        try {
+          const receipt = await this.provider.getTransactionReceipt(txHash);
+          if (receipt) {
+            const msg = await this._parseMessageFromReceipt(receipt);
+            messageText = msg?.text ?? null;
+          }
+        } catch {
+          // Non-fatal: message text stays null
+        }
+      }
+
+      // Timer info
+      const remaining = timeUntilRefund(deposit.depositedAt, deposit.timeout, nowSeconds);
+      const expired = remaining === 0;
+
+      // Format amount
+      let formattedAmount: string | null = null;
+      try {
+        formattedAmount = await this.formatTokenAmount(deposit.token, deposit.amount);
+      } catch {
+        // Token contract might not exist
+      }
+
+      enriched.push({
+        ...deposit,
+        txHash,
+        blockNumber,
+        messageText,
+        hasResponse: responseStatuses[i],
+        remainingSeconds: remaining,
+        formattedRemaining: formatTimeout(remaining),
+        expired,
+        formattedAmount,
+      });
+    }
+
+    // Sort newest first
+    enriched.sort((a, b) => Number(b.depositedAt - a.depositedAt));
+    return enriched;
+  }
+
+  /**
+   * Parse a MessageSent event from a transaction receipt and decrypt it.
+   * Returns null if no MessageSent event is found.
+   */
+  private async _parseMessageFromReceipt(receipt: ethers.TransactionReceipt): Promise<Message | null> {
+    const iface = this.registry.interface;
+    for (const log of receipt.logs) {
+      try {
+        const parsed = iface.parseLog(log);
+        if (parsed?.name === 'MessageSent') {
+          const topicId = Number(parsed.args.topicId);
+          const sender = parsed.args.sender as string;
+          const payloadBytes = parsed.args.payload as string;
+          const timestamp = Number(parsed.args.timestamp);
+
+          let text = '[unable to decrypt]';
+          try {
+            const key = await this.getEncryptionKey(topicId);
+            const payloadStr = ethers.toUtf8String(payloadBytes);
+            const result = decryptMessage(payloadStr, key);
+            if (result) text = result.text;
+          } catch {
+            // Decryption failed — private topic without key loaded
+          }
+
+          return {
+            topicId,
+            sender,
+            text,
+            replyTo: null,
+            mentions: null,
+            timestamp,
+            txHash: receipt.hash,
+            blockNumber: receipt.blockNumber,
+          };
+        }
+      } catch { /* skip non-matching logs */ }
+    }
+    return null;
   }
 
   // ===== ECDH (Private Topics) =====
