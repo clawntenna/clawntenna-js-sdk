@@ -15,9 +15,24 @@ export async function schemaCreate(
   const tx = await client.createAppSchema(appId, name, description, body);
   const receipt = await tx.wait();
 
+  // Parse schemaId from AppSchemaCreated event
+  let schemaId: number | null = null;
+  if (receipt) {
+    for (const log of receipt.logs) {
+      try {
+        const parsed = client.schemaRegistry.interface.parseLog(log);
+        if (parsed?.name === 'AppSchemaCreated' || parsed?.name === 'SchemaCreated') {
+          schemaId = Number(parsed.args.schemaId);
+          break;
+        }
+      } catch { /* skip non-matching logs */ }
+    }
+  }
+
   if (json) {
-    output({ txHash: tx.hash, blockNumber: receipt?.blockNumber, appId }, true);
+    output({ txHash: tx.hash, blockNumber: receipt?.blockNumber, appId, schemaId }, true);
   } else {
+    console.log(`Schema created${schemaId ? ` (ID: ${schemaId})` : ''}`);
     console.log(`TX: ${tx.hash}`);
     console.log(`Confirmed in block ${receipt?.blockNumber}`);
   }
