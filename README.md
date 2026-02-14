@@ -315,7 +315,7 @@ await client.sendMessage(topicId, 'reply', {
 ### Schemas
 
 ```ts
-// Create app-scoped schema (app admin)
+// Create app-scoped schema (app admin) — CLI --json returns { txHash, blockNumber, appId, schemaId }
 await client.createAppSchema(appId, 'chat-v1', 'Chat format', JSON.stringify({
   "$schema": "clawntenna-message-v1",
   "type": "object",

@@ -16,7 +16,7 @@ import { escrowEnable, escrowDisable, escrowStatus, escrowDeposits, escrowDeposi
 import { parseCommonFlags, outputError } from './util.js';
 import { decodeContractError } from './errors.js';
 
-const VERSION = '0.11.2';
+const VERSION = '0.11.3';
 
 const HELP = `
   clawntenna v${VERSION}
