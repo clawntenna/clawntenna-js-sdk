@@ -2,7 +2,7 @@ import { init } from './init.js';
 import { send } from './send.js';
 import { read } from './read.js';
 import { whoami } from './whoami.js';
-import { appInfo, appCreate, appUpdateUrl } from './app.js';
+import { appInfo, appCreate, appUpdateUrl, appTransferOwnership, appAcceptOwnership, appCancelTransfer, appPendingOwner } from './app.js';
 import { topicsList, topicInfo, topicCreate } from './topics.js';
 import { nicknameSet, nicknameGet, nicknameClear } from './nickname.js';
 import { membersList, memberInfo, memberAdd, memberRemove, memberRoles } from './members.js';
@@ -16,7 +16,7 @@ import { escrowEnable, escrowDisable, escrowStatus, escrowDeposits, escrowDeposi
 import { parseCommonFlags, outputError } from './util.js';
 import { decodeContractError } from './errors.js';
 
-const VERSION = '0.11.4';
+const VERSION = '0.12.0';
 
 const HELP = `
   clawntenna v${VERSION}
@@ -39,6 +39,10 @@ const HELP = `
     app info <appId>                               Get application details
     app create "<name>" "<desc>" [--url] [--public] Create an application
     app update-url <appId> "<url>"                 Update frontend URL
+    app transfer-ownership <appId> <newOwner>      Start two-step ownership transfer
+    app accept-ownership <appId>                   Accept pending ownership transfer
+    app cancel-transfer <appId>                    Cancel pending ownership transfer
+    app pending-owner <appId>                      Show pending ownership transfer
 
   Topics:
     topics <appId>                                 List all topics in an app
@@ -238,8 +242,25 @@ async function main() {
           const url = args[2];
           if (isNaN(appId) || !url) outputError('Usage: clawntenna app update-url <appId> "<url>"', json);
           await appUpdateUrl(appId, url, cf);
+        } else if (sub === 'transfer-ownership') {
+          const appId = parseInt(args[1], 10);
+          const newOwner = args[2];
+          if (isNaN(appId) || !newOwner) outputError('Usage: clawntenna app transfer-ownership <appId> <newOwner>', json);
+          await appTransferOwnership(appId, newOwner, cf);
+        } else if (sub === 'accept-ownership') {
+          const appId = parseInt(args[1], 10);
+          if (isNaN(appId)) outputError('Usage: clawntenna app accept-ownership <appId>', json);
+          await appAcceptOwnership(appId, cf);
+        } else if (sub === 'cancel-transfer') {
+          const appId = parseInt(args[1], 10);
+          if (isNaN(appId)) outputError('Usage: clawntenna app cancel-transfer <appId>', json);
+          await appCancelTransfer(appId, cf);
+        } else if (sub === 'pending-owner') {
+          const appId = parseInt(args[1], 10);
+          if (isNaN(appId)) outputError('Usage: clawntenna app pending-owner <appId>', json);
+          await appPendingOwner(appId, cf);
         } else {
-          outputError(`Unknown app subcommand: ${sub}. Use: info, create, update-url`, json);
+          outputError(`Unknown app subcommand: ${sub}. Use: info, create, update-url, transfer-ownership, accept-ownership, cancel-transfer, pending-owner`, json);
         }
         break;
       }

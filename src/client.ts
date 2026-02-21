@@ -232,32 +232,10 @@ export class Clawntenna {
 
   /**
    * Check if the current signer is exempt from message fees on a topic.
-   * Mirrors contract logic: topic owner, app owner, ROLE_ADMIN, PERMISSION_ADMIN.
+   * Uses the on-chain isTopicAdmin helper which checks: topic owner, app owner, ROLE_ADMIN, PERMISSION_ADMIN.
    */
   private async _isFeeExempt(topicId: number): Promise<boolean> {
-    const addr = this._address!.toLowerCase();
-    const topic = await this.getTopic(topicId);
-
-    if (topic.owner.toLowerCase() === addr) return true;
-
-    const app = await this.getApplication(Number(topic.applicationId));
-    if (app.owner.toLowerCase() === addr) return true;
-
-    try {
-      const member = await this.getMember(Number(topic.applicationId), this._address!);
-      if ((member.roles & Role.ADMIN) !== 0) return true;
-    } catch {
-      // Not a member — not exempt via role
-    }
-
-    try {
-      const perm = await this.getTopicPermission(topicId, this._address!);
-      if (perm === Permission.ADMIN) return true;
-    } catch {
-      // No permission set
-    }
-
-    return false;
+    return this.registry.isTopicAdmin(topicId, this._address!);
   }
 
   /**
@@ -521,6 +499,50 @@ export class Clawntenna {
 
   async canWrite(topicId: number, address: string): Promise<boolean> {
     return this.registry.canWriteToTopic(topicId, address);
+  }
+
+  // ===== VIEW HELPERS (V11) =====
+
+  async getTopicOwner(topicId: number): Promise<string> {
+    return this.registry.getTopicOwner(topicId);
+  }
+
+  async getTopicApplicationId(topicId: number): Promise<number> {
+    const id = await this.registry.getTopicApplicationId(topicId);
+    return Number(id);
+  }
+
+  async getApplicationOwner(appId: number): Promise<string> {
+    return this.registry.getApplicationOwner(appId);
+  }
+
+  async isTopicAdmin(topicId: number, user: string): Promise<boolean> {
+    return this.registry.isTopicAdmin(topicId, user);
+  }
+
+  async isAppAdmin(appId: number, user: string): Promise<boolean> {
+    return this.registry.isAppAdmin(appId, user);
+  }
+
+  // ===== APPLICATION OWNERSHIP TRANSFER (V11) =====
+
+  async transferApplicationOwnership(appId: number, newOwner: string): Promise<ethers.ContractTransactionResponse> {
+    this.requireSigner();
+    return this.registry.transferApplicationOwnership(appId, newOwner);
+  }
+
+  async acceptApplicationOwnership(appId: number): Promise<ethers.ContractTransactionResponse> {
+    this.requireSigner();
+    return this.registry.acceptApplicationOwnership(appId);
+  }
+
+  async cancelApplicationOwnershipTransfer(appId: number): Promise<ethers.ContractTransactionResponse> {
+    this.requireSigner();
+    return this.registry.cancelApplicationOwnershipTransfer(appId);
+  }
+
+  async getPendingApplicationOwner(appId: number): Promise<string> {
+    return this.registry.pendingApplicationOwner(appId);
   }
 
   // ===== APPLICATIONS =====

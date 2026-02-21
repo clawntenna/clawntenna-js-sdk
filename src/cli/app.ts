@@ -80,3 +80,75 @@ export async function appUpdateUrl(appId: number, url: string, flags: CommonFlag
     console.log(`Confirmed in block ${receipt?.blockNumber}`);
   }
 }
+
+export async function appTransferOwnership(appId: number, newOwner: string, flags: CommonFlags) {
+  const client = loadClient(flags);
+  const json = flags.json ?? false;
+
+  if (!json) console.log(`Starting ownership transfer for app ${appId} to ${newOwner}...`);
+
+  const tx = await client.transferApplicationOwnership(appId, newOwner);
+  const receipt = await tx.wait();
+
+  if (json) {
+    output({ txHash: tx.hash, blockNumber: receipt?.blockNumber, appId, newOwner }, true);
+  } else {
+    console.log(`TX: ${tx.hash}`);
+    console.log(`Confirmed in block ${receipt?.blockNumber}`);
+    console.log(`Pending owner set to ${newOwner}. They must call 'app accept-ownership ${appId}' to complete.`);
+  }
+}
+
+export async function appAcceptOwnership(appId: number, flags: CommonFlags) {
+  const client = loadClient(flags);
+  const json = flags.json ?? false;
+
+  if (!json) console.log(`Accepting ownership of app ${appId}...`);
+
+  const tx = await client.acceptApplicationOwnership(appId);
+  const receipt = await tx.wait();
+
+  if (json) {
+    output({ txHash: tx.hash, blockNumber: receipt?.blockNumber, appId }, true);
+  } else {
+    console.log(`TX: ${tx.hash}`);
+    console.log(`Confirmed in block ${receipt?.blockNumber}`);
+    console.log(`You are now the owner of app ${appId}.`);
+  }
+}
+
+export async function appCancelTransfer(appId: number, flags: CommonFlags) {
+  const client = loadClient(flags);
+  const json = flags.json ?? false;
+
+  if (!json) console.log(`Cancelling ownership transfer for app ${appId}...`);
+
+  const tx = await client.cancelApplicationOwnershipTransfer(appId);
+  const receipt = await tx.wait();
+
+  if (json) {
+    output({ txHash: tx.hash, blockNumber: receipt?.blockNumber, appId }, true);
+  } else {
+    console.log(`TX: ${tx.hash}`);
+    console.log(`Confirmed in block ${receipt?.blockNumber}`);
+    console.log(`Ownership transfer cancelled.`);
+  }
+}
+
+export async function appPendingOwner(appId: number, flags: CommonFlags) {
+  const client = loadClient(flags, false);
+  const json = flags.json ?? false;
+
+  const pending = await client.getPendingApplicationOwner(appId);
+  const hasPending = pending !== ethers.ZeroAddress;
+
+  if (json) {
+    output({ appId, pendingOwner: hasPending ? pending : null }, true);
+  } else {
+    if (hasPending) {
+      console.log(`Pending owner for app ${appId}: ${pending}`);
+    } else {
+      console.log(`No pending ownership transfer for app ${appId}.`);
+    }
+  }
+}

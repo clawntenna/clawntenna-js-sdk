@@ -92,6 +92,24 @@ export const REGISTRY_ABI = [
   // Data export
   'function exportMemberData(uint256 appId, address user) view returns (bytes)',
   'function exportApplicationData(uint256 appId) view returns (bytes)',
+
+  // V11 — Typed view helpers
+  'function getTopicOwner(uint256 topicId) view returns (address)',
+  'function getTopicApplicationId(uint256 topicId) view returns (uint256)',
+  'function getApplicationOwner(uint256 appId) view returns (address)',
+  'function isTopicAdmin(uint256 topicId, address user) view returns (bool)',
+  'function isAppAdmin(uint256 appId, address user) view returns (bool)',
+  'function pendingApplicationOwner(uint256) view returns (address)',
+
+  // V11 — Two-step application ownership transfer
+  'function transferApplicationOwnership(uint256 appId, address newOwner)',
+  'function acceptApplicationOwnership(uint256 appId)',
+  'function cancelApplicationOwnershipTransfer(uint256 appId)',
+
+  // V11 — Events
+  'event ApplicationOwnershipTransferStarted(uint256 indexed appId, address indexed currentOwner, address indexed newOwner)',
+  'event ApplicationOwnershipTransferred(uint256 indexed appId, address indexed previousOwner, address indexed newOwner)',
+  'event ApplicationOwnershipTransferCancelled(uint256 indexed appId, address indexed owner)',
 ] as const;
 
 export const SCHEMA_REGISTRY_ABI = [
