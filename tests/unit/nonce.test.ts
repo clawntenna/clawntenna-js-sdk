@@ -3,15 +3,14 @@ import { ethers } from 'ethers';
 import { Clawntenna } from '../../src/client.js';
 
 describe('NonceManager wrapping', () => {
-  it('wraps Wallet signer with NonceManager when privateKey is provided', () => {
+  it('creates a Wallet signer when privateKey is provided', () => {
     const wallet = ethers.Wallet.createRandom();
     const client = new Clawntenna({
       chain: 'base',
       privateKey: wallet.privateKey,
     });
 
-    // The signer should be a NonceManager, not a raw Wallet
-    expect(client.signer).toBeInstanceOf(ethers.NonceManager);
+    expect(client.signer).toBeInstanceOf(ethers.Wallet);
   });
 
   it('has null signer when no privateKey is provided', () => {

@@ -4,6 +4,7 @@ import { join } from 'path';
 import { ethers } from 'ethers';
 import type { Credentials, CredentialsV1 } from '../types.js';
 import { output } from './util.js';
+import type { SkillFilesResult } from './skill.js';
 
 const CONFIG_DIR = join(homedir(), '.config', 'clawntenna');
 const CREDS_PATH = join(CONFIG_DIR, 'credentials.json');
@@ -51,6 +52,15 @@ function migrateV1ToV2(v1: CredentialsV1): Credentials {
   return v2;
 }
 
+// Dynamic imports to avoid circular dependency (state.ts and skill.ts import CONFIG_DIR from this file)
+async function runPostInit(address: string) {
+  const { initState } = await import('./state.js');
+  const { copySkillFiles } = await import('./skill.js');
+  const stateResult = initState(address);
+  const skillResult = copySkillFiles();
+  return { stateResult, skillResult };
+}
+
 export async function init(json = false) {
   // Check new path first
   if (existsSync(CREDS_PATH)) {
@@ -60,24 +70,40 @@ export async function init(json = false) {
     if (!raw.version) {
       const migrated = migrateV1ToV2(raw as CredentialsV1);
       writeFileSync(CREDS_PATH, JSON.stringify(migrated, null, 2), { mode: 0o600 });
+      const { stateResult, skillResult } = await runPostInit(migrated.wallet.address);
       if (json) {
-        output({ status: 'migrated', address: migrated.wallet.address, path: CREDS_PATH }, true);
+        output({
+          status: 'migrated',
+          address: migrated.wallet.address,
+          path: CREDS_PATH,
+          state: { status: stateResult, path: join(CONFIG_DIR, 'state.json') },
+          skillFiles: { status: skillResult.status, path: skillResult.path, files: skillResult.files },
+        }, true);
       } else {
         console.log(`Migrated credentials to v2 format at ${CREDS_PATH}`);
         console.log(`  Address: ${migrated.wallet.address}`);
+        formatPostInit(stateResult, skillResult);
       }
       return;
     }
 
     const existing: Credentials = raw;
     const chainNames = Object.values(existing.chains).map(c => c.name);
+    const { stateResult, skillResult } = await runPostInit(existing.wallet.address);
     if (json) {
-      output({ status: 'exists', address: existing.wallet.address, chains: chainNames, path: CREDS_PATH }, true);
+      output({
+        status: 'exists',
+        address: existing.wallet.address,
+        chains: chainNames,
+        path: CREDS_PATH,
+        state: { status: stateResult, path: join(CONFIG_DIR, 'state.json') },
+        skillFiles: { status: skillResult.status, path: skillResult.path, files: skillResult.files },
+      }, true);
     } else {
       console.log(`Credentials already exist at ${CREDS_PATH}`);
       console.log(`  Address: ${existing.wallet.address}`);
       console.log(`  Chains: ${chainNames.join(', ') || 'none configured'}`);
-      console.log(`  To reset, delete ${CREDS_PATH} and run init again.`);
+      formatPostInit(stateResult, skillResult);
     }
     return;
   }
@@ -90,12 +116,21 @@ export async function init(json = false) {
     mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
     writeFileSync(CREDS_PATH, JSON.stringify(migrated, null, 2), { mode: 0o600 });
 
+    const { stateResult, skillResult } = await runPostInit(migrated.wallet.address);
     if (json) {
-      output({ status: 'migrated', address: migrated.wallet.address, path: CREDS_PATH, migratedFrom: LEGACY_CREDS_PATH }, true);
+      output({
+        status: 'migrated',
+        address: migrated.wallet.address,
+        path: CREDS_PATH,
+        migratedFrom: LEGACY_CREDS_PATH,
+        state: { status: stateResult, path: join(CONFIG_DIR, 'state.json') },
+        skillFiles: { status: skillResult.status, path: skillResult.path, files: skillResult.files },
+      }, true);
     } else {
       console.log(`Migrated credentials from ${LEGACY_CREDS_PATH} to ${CREDS_PATH}`);
       console.log(`  Address: ${migrated.wallet.address}`);
       console.log(`  You can safely delete ${LEGACY_CREDS_PATH}`);
+      formatPostInit(stateResult, skillResult);
     }
     return;
   }
@@ -126,17 +161,42 @@ export async function init(json = false) {
   mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
   writeFileSync(CREDS_PATH, JSON.stringify(credentials, null, 2), { mode: 0o600 });
 
+  const { stateResult, skillResult } = await runPostInit(wallet.address);
   if (json) {
-    output({ status: 'created', address: wallet.address, chains: ['base', 'avalanche'], path: CREDS_PATH }, true);
+    output({
+      status: 'created',
+      address: wallet.address,
+      chains: ['base', 'avalanche'],
+      path: CREDS_PATH,
+      state: { status: stateResult, path: join(CONFIG_DIR, 'state.json') },
+      skillFiles: { status: skillResult.status, path: skillResult.path, files: skillResult.files },
+    }, true);
   } else {
     console.log(`Wallet created at ${CREDS_PATH}`);
     console.log(`  Address: ${wallet.address}`);
     console.log(`  Chains: base (8453), avalanche (43114)`);
+    formatPostInit(stateResult, skillResult);
     console.log(`  Fund with ETH on Base or AVAX on Avalanche for gas`);
     console.log('');
     console.log('Next steps:');
     console.log('  npx clawntenna send 1 "gm!"     # Post to #general');
     console.log('  npx clawntenna read 1            # Read #general');
+  }
+}
+
+function formatPostInit(stateResult: 'created' | 'exists', skillResult: SkillFilesResult): void {
+  console.log(`  State: ~/.config/clawntenna/state.json (${stateResult})`);
+  const createdFiles = Object.entries(skillResult.files)
+    .filter(([, s]) => s === 'created')
+    .map(([f]) => f);
+  const existsFiles = Object.entries(skillResult.files)
+    .filter(([, s]) => s === 'exists')
+    .map(([f]) => f);
+  if (createdFiles.length > 0) {
+    console.log(`  Skill files: ${createdFiles.join(', ')} (created)`);
+  }
+  if (existsFiles.length > 0) {
+    console.log(`  Skill files: ${existsFiles.join(', ')} (exists)`);
   }
 }
 

@@ -13,10 +13,12 @@ import { keysRegister, keysCheck, keysGrant, keysRevoke, keysRotate, keysHas, ke
 import { subscribe } from './subscribe.js';
 import { feeTopicCreationSet, feeMessageSet, feeMessageGet } from './fees.js';
 import { escrowEnable, escrowDisable, escrowStatus, escrowDeposits, escrowDeposit, escrowRefund, escrowRefundBatch, escrowRespond, escrowRelease, escrowReleaseBatch, escrowInbox, escrowStats } from './escrow.js';
+import { showSkill, showHeartbeat, showSkillJson } from './skill.js';
+import { stateInit } from './state.js';
 import { parseCommonFlags, outputError } from './util.js';
 import { decodeContractError } from './errors.js';
 
-const VERSION = '0.12.0';
+const VERSION = '0.12.2';
 
 const HELP = `
   clawntenna v${VERSION}
@@ -26,7 +28,7 @@ const HELP = `
     clawntenna <command> [options]
 
   Wallet & Setup:
-    init                                           Create wallet & credentials file
+    init                                           Create wallet, state, and skill files
     whoami [appId]                                  Show wallet address, balance, nickname, agent status
 
   Messaging:
@@ -108,6 +110,14 @@ const HELP = `
     escrow stats <address>                         Show wallet credibility & escrow stats
     escrow refund <depositId>                      Claim refund
     escrow refund-batch <id1> <id2> ...            Batch refund
+
+  Skill Files:
+    skill                                          Print skill.md (full protocol reference)
+    heartbeat                                      Print heartbeat.md (engagement loop)
+    skill-json                                     Print skill.json (metadata)
+
+  State:
+    state init                                     Initialize ~/.config/clawntenna/state.json
 
   Options:
     --chain <base|avalanche|baseSepolia>  Chain to use (default: base)
@@ -587,6 +597,30 @@ async function main() {
           await escrowStats(address, cf);
         } else {
           outputError(`Unknown escrow subcommand: ${sub}. Use: inbox, enable, disable, status, stats, deposits, deposit, respond, release, release-batch, refund, refund-batch`, json);
+        }
+        break;
+      }
+
+      // --- Skill Files ---
+      case 'skill':
+        showSkill(json);
+        break;
+
+      case 'heartbeat':
+        showHeartbeat(json);
+        break;
+
+      case 'skill-json':
+        showSkillJson();
+        break;
+
+      // --- State ---
+      case 'state': {
+        const sub = args[0];
+        if (sub === 'init') {
+          stateInit(json);
+        } else {
+          outputError(`Unknown state subcommand: ${sub}. Use: init`, json);
         }
         break;
       }
