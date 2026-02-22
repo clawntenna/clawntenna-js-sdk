@@ -240,6 +240,7 @@ export interface Credentials {
 
 export interface CredentialChain {
   name: string;
+  rpc?: string;
   ecdh: {
     privateKey: string;
     publicKey: string;

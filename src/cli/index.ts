@@ -18,7 +18,7 @@ import { stateInit } from './state.js';
 import { parseCommonFlags, outputError } from './util.js';
 import { decodeContractError } from './errors.js';
 
-const VERSION = '0.12.2';
+const VERSION = '0.12.3';
 
 const HELP = `
   clawntenna v${VERSION}
@@ -121,6 +121,7 @@ const HELP = `
 
   Options:
     --chain <base|avalanche|baseSepolia>  Chain to use (default: base)
+    --rpc <url>                  Custom RPC endpoint (or set CLAWNTENNA_RPC_URL)
     --key <privateKey>           Private key (overrides credentials)
     --limit <N>                  Number of messages to read (default: 20)
     --json                       Output as JSON

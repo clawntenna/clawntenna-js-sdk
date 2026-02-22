@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync, copyFileSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 import { ethers } from 'ethers';
@@ -8,6 +8,7 @@ import type { SkillFilesResult } from './skill.js';
 
 const CONFIG_DIR = join(homedir(), '.config', 'clawntenna');
 const CREDS_PATH = join(CONFIG_DIR, 'credentials.json');
+const CREDS_BACKUP_PATH = CREDS_PATH + '.bak';
 
 // Legacy path for migration
 const LEGACY_DIR = join(homedir(), '.clawntenna');
@@ -52,6 +53,33 @@ function migrateV1ToV2(v1: CredentialsV1): Credentials {
   return v2;
 }
 
+function backupCredentials(): void {
+  if (existsSync(CREDS_PATH)) {
+    copyFileSync(CREDS_PATH, CREDS_BACKUP_PATH);
+  }
+}
+
+function validateKeyAddress(creds: Credentials): void {
+  const { address, privateKey } = creds.wallet;
+  if (!privateKey || !address) return;
+  try {
+    const derived = ethers.computeAddress(privateKey);
+    if (derived.toLowerCase() !== address.toLowerCase()) {
+      throw new Error(
+        `Key mismatch in credentials.json: private key derives to ${derived} but stored address is ${address}. ` +
+        `The file may have been corrupted. A backup was saved to ${CREDS_BACKUP_PATH}.`
+      );
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith('Key mismatch')) throw err;
+    // If computeAddress fails, the private key is invalid
+    throw new Error(
+      `Invalid private key in credentials.json. The key could not be parsed. ` +
+      `A backup was saved to ${CREDS_BACKUP_PATH}.`
+    );
+  }
+}
+
 // Dynamic imports to avoid circular dependency (state.ts and skill.ts import CONFIG_DIR from this file)
 async function runPostInit(address: string) {
   const { initState } = await import('./state.js');
@@ -69,6 +97,7 @@ export async function init(json = false) {
     // Migrate v1 format at new path if needed
     if (!raw.version) {
       const migrated = migrateV1ToV2(raw as CredentialsV1);
+      backupCredentials();
       writeFileSync(CREDS_PATH, JSON.stringify(migrated, null, 2), { mode: 0o600 });
       const { stateResult, skillResult } = await runPostInit(migrated.wallet.address);
       if (json) {
@@ -114,6 +143,7 @@ export async function init(json = false) {
     const migrated = raw.version ? raw : migrateV1ToV2(raw as CredentialsV1);
 
     mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+    backupCredentials();
     writeFileSync(CREDS_PATH, JSON.stringify(migrated, null, 2), { mode: 0o600 });
 
     const { stateResult, skillResult } = await runPostInit(migrated.wallet.address);
@@ -204,15 +234,17 @@ export function loadCredentials(): Credentials | null {
   // Try new path first
   if (existsSync(CREDS_PATH)) {
     const raw = JSON.parse(readFileSync(CREDS_PATH, 'utf-8'));
-    if (!raw.version) return migrateV1ToV2(raw as CredentialsV1);
-    return raw as Credentials;
+    const creds: Credentials = !raw.version ? migrateV1ToV2(raw as CredentialsV1) : raw;
+    validateKeyAddress(creds);
+    return creds;
   }
 
   // Fall back to legacy path
   if (existsSync(LEGACY_CREDS_PATH)) {
     const raw = JSON.parse(readFileSync(LEGACY_CREDS_PATH, 'utf-8'));
-    if (!raw.version) return migrateV1ToV2(raw as CredentialsV1);
-    return raw as Credentials;
+    const creds: Credentials = !raw.version ? migrateV1ToV2(raw as CredentialsV1) : raw;
+    validateKeyAddress(creds);
+    return creds;
   }
 
   return null;
