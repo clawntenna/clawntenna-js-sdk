@@ -79,7 +79,8 @@ Legacy credentials at `~/.clawntenna/` are auto-migrated on first load.
 
 ```ts
 const client = new Clawntenna({
-  chain: 'base',              // 'base' | 'avalanche' | 'baseSepolia'
+  chain: 'base',              // Optional: 'base' | 'avalanche' | 'baseSepolia'
+  chainId: 8453,              // Optional alternative to `chain`
   privateKey: '0x...',        // Optional — required for write operations
   rpcUrl: '...',              // Optional — override default RPC
   registryAddress: '0x...',   // Optional — override default registry
@@ -105,7 +106,7 @@ await client.sendMessage(topicId, 'hello!', {
 // Read and decrypt recent messages
 const msgs = await client.readMessages(topicId, {
   limit: 50,        // Max messages (default 50)
-  fromBlock: -100000 // How far back to scan (default -100000)
+  fromBlock: 12345678 // Optional absolute starting block
 });
 // Returns: { topicId, sender, text, replyTo, mentions, timestamp, txHash, blockNumber }[]
 

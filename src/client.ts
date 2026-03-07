@@ -1,5 +1,5 @@
 import { ethers } from 'ethers';
-import { CHAINS } from './chains.js';
+import { CHAINS, CHAIN_IDS } from './chains.js';
 import { REGISTRY_ABI, KEY_MANAGER_ABI, SCHEMA_REGISTRY_ABI, IDENTITY_REGISTRY_ABI, ESCROW_ABI } from './contracts.js';
 import {
   derivePublicTopicKey,
@@ -78,7 +78,7 @@ export class Clawntenna {
   private static ERC20_DECIMALS_ABI = ['function decimals() view returns (uint8)'];
 
   constructor(options: ClawtennaOptions = {}) {
-    const chainName = options.chain ?? 'base';
+    const chainName = options.chain ?? (options.chainId != null ? CHAIN_IDS[options.chainId] : undefined) ?? 'base';
     const chain = CHAINS[chainName];
     if (!chain) throw new Error(`Unsupported chain: ${chainName}`);
     this.chainName = chainName;

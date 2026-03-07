@@ -18,7 +18,7 @@ import { stateInit } from './state.js';
 import { parseCommonFlags, outputError } from './util.js';
 import { decodeContractError } from './errors.js';
 
-const VERSION = '0.12.3';
+const VERSION = '0.12.4';
 
 const HELP = `
   clawntenna v${VERSION}

@@ -10,6 +10,11 @@ describe('Clawntenna signer support', () => {
       expect(client.wallet).toBeNull(); // deprecated getter
     });
 
+    it('resolves the chain from chainId when chain is omitted', () => {
+      const client = new Clawntenna({ chainId: 43114 });
+      expect(client.chainName).toBe('avalanche');
+    });
+
     it('exposes registry and keyManager as read-only', () => {
       const client = new Clawntenna({ chain: 'base' });
       expect(client.registry).toBeDefined();
