@@ -28,7 +28,13 @@ export function loadClient(flags: CommonFlags, requireWallet = true): Clawntenna
   const chainId = chainIdForCredentials(flags.chain);
   const credsRpc = creds?.chains[chainId]?.rpc;
   const rpcUrl = flags.rpc ?? process.env.CLAWNTENNA_RPC_URL ?? credsRpc;
-  return new Clawntenna({ chain: flags.chain, privateKey: privateKey ?? undefined, rpcUrl });
+  const historyApiKey = process.env.ROUTESCAN_API_KEY ?? process.env.BASESCAN_API_KEY;
+  return new Clawntenna({
+    chain: flags.chain,
+    privateKey: privateKey ?? undefined,
+    rpcUrl,
+    historyApiKey,
+  });
 }
 
 export function output(data: unknown, json: boolean): void {

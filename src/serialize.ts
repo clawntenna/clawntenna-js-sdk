@@ -9,9 +9,7 @@ export function serializeMessage(msg: Message): Record<string, unknown> {
   return {
     topicId: msg.topicId,
     sender: msg.sender,
-    text: msg.text,
-    replyTo: msg.replyTo,
-    mentions: msg.mentions,
+    content: msg.content,
     timestamp: msg.timestamp,
     txHash: msg.txHash,
     blockNumber: msg.blockNumber,

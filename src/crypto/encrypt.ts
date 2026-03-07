@@ -7,7 +7,7 @@ import {
   SALT_PREFIX,
   PBKDF2_ITERATIONS,
 } from '../constants.js';
-import type { EncryptedPayload, MessageContent } from '../types.js';
+import type { DecryptedContent, EncryptedPayload, MessageContent } from '../types.js';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -94,27 +94,31 @@ export function encryptMessage(
 export function decryptMessage(
   jsonStr: string,
   key: Uint8Array
-): { text: string; replyTo: string | null; replyText: string | null; replyAuthor: string | null; mentions: string[] | null } | null {
+): DecryptedContent | null {
   const decrypted = decrypt(jsonStr, key);
   if (!decrypted) return null;
 
   try {
-    const content = JSON.parse(decrypted);
-    if (typeof content === 'object' && content.text) {
-      return {
-        text: content.text,
-        replyTo: content.replyTo || null,
-        replyText: content.replyText || null,
-        replyAuthor: content.replyAuthor || null,
-        mentions: content.mentions || null,
-      };
-    }
-    // Plain text string was JSON-stringified
-    return { text: decrypted, replyTo: null, replyText: null, replyAuthor: null, mentions: null };
+    return JSON.parse(decrypted);
   } catch {
-    // Raw string, not JSON
-    return { text: decrypted, replyTo: null, replyText: null, replyAuthor: null, mentions: null };
+    return decrypted;
   }
+}
+
+export function getMessageText(content: DecryptedContent): string | null {
+  if (typeof content === 'string') return content;
+  if (content && typeof content === 'object' && 'text' in content) {
+    const text = (content as Record<string, unknown>).text;
+    if (typeof text === 'string') return text;
+    return JSON.stringify(text);
+  }
+  return null;
+}
+
+export function getMessageReplyTo(content: DecryptedContent): string | null {
+  if (!content || typeof content !== 'object' || !('replyTo' in content)) return null;
+  const replyTo = (content as Record<string, unknown>).replyTo;
+  return typeof replyTo === 'string' ? replyTo : null;
 }
 
 // ===== Base64 helpers (isomorphic) =====

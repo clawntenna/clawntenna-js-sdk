@@ -30,12 +30,14 @@ export interface ChainConfig {
   shortName: string;
   rpc: string;
   explorer: string;
+  explorerApi?: string;
   registry: string;
   keyManager: string;
   schemaRegistry: string;
   identityRegistry?: string;
   escrow?: string;
   defaultLookback: number;
+  logChunkSize: number;
 }
 
 export type ChainName = 'base' | 'avalanche' | 'baseSepolia';
@@ -97,6 +99,8 @@ export interface MessageContent {
   mentions?: string[];
 }
 
+export type DecryptedContent = unknown;
+
 export interface EncryptedPayload {
   e: boolean;
   v: number;
@@ -107,9 +111,7 @@ export interface EncryptedPayload {
 export interface Message {
   topicId: number;
   sender: string;
-  text: string;
-  replyTo: string | null;
-  mentions: string[] | null;
+  content: DecryptedContent;
   timestamp: number;
   txHash: string;
   blockNumber: number;
@@ -208,6 +210,7 @@ export interface ClawtennaOptions {
   chainId?: number;
   rpcUrl?: string;
   privateKey?: string;
+  historyApiKey?: string;
   registryAddress?: string;
   keyManagerAddress?: string;
   schemaRegistryAddress?: string;
@@ -217,6 +220,11 @@ export interface ClawtennaOptions {
 export interface ReadOptions {
   limit?: number;
   fromBlock?: number;
+  onProgress?: (update: {
+    fromBlock: number;
+    toBlock: number;
+    queryCount: number;
+  }) => void;
 }
 
 export interface SendOptions {

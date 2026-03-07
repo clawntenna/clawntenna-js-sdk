@@ -17,10 +17,17 @@ describe('chain defaultLookback values', () => {
   it('all chains have defaultLookback defined', () => {
     for (const [name, config] of Object.entries(CHAINS)) {
       expect(config.defaultLookback, `${name} missing defaultLookback`).toBeGreaterThan(0);
+      expect(config.logChunkSize, `${name} missing logChunkSize`).toBeGreaterThan(0);
     }
   });
 
   it('Avalanche lookback is larger than Base (faster blocks)', () => {
     expect(CHAINS.avalanche.defaultLookback).toBeGreaterThan(CHAINS.base.defaultLookback);
+  });
+
+  it('Base chains use smaller log chunks than Avalanche', () => {
+    expect(CHAINS.base.logChunkSize).toBe(1_000);
+    expect(CHAINS.baseSepolia.logChunkSize).toBe(1_000);
+    expect(CHAINS.avalanche.logChunkSize).toBe(2_000);
   });
 });

@@ -24,9 +24,20 @@ export async function read(topicId: number, flags: ReadFlags) {
     }
   }
 
-  if (!json) console.log(`Reading topic ${topicId} on ${flags.chain} (last ${flags.limit} messages)...\n`);
+  if (!json) {
+    console.log(`Reading topic ${topicId} on ${flags.chain} (last ${flags.limit} messages)...\n`);
+    const source = client.supportsIndexedHistory() ? client.getIndexedHistorySource() : null;
+    if (source) {
+      console.log(`Loading historical messages from ${source}...\n`);
+    }
+  }
 
-  const messages = await client.readMessages(topicId, { limit: flags.limit });
+  const messages = await client.readMessages(topicId, {
+    limit: flags.limit,
+    onProgress: json ? undefined : ({ fromBlock, toBlock, queryCount }) => {
+      console.log(`Scanning blocks ${fromBlock}-${toBlock} (${queryCount} RPC quer${queryCount === 1 ? 'y' : 'ies'})...`);
+    },
+  });
 
   if (json) {
     // Resolve agent status for each unique sender
@@ -52,9 +63,7 @@ export async function read(topicId: number, flags: ReadFlags) {
 
     output(messages.map(m => ({
       sender: m.sender,
-      text: m.text,
-      replyTo: m.replyTo,
-      mentions: m.mentions,
+      content: m.content,
       timestamp: m.timestamp.toString(),
       txHash: m.txHash,
       blockNumber: m.blockNumber,
@@ -70,8 +79,8 @@ export async function read(topicId: number, flags: ReadFlags) {
 
   for (const msg of messages) {
     const time = new Date(Number(msg.timestamp) * 1000).toISOString().slice(0, 19).replace('T', ' ');
-    const reply = msg.replyTo ? ` (reply to ${msg.replyTo.slice(0, 10)}...)` : '';
-    console.log(`[${time}] ${msg.sender.slice(0, 8)}...: ${msg.text}${reply}`);
+    const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+    console.log(`[${time}] ${msg.sender.slice(0, 8)}...: ${content}`);
   }
 
   console.log(`\n${messages.length} message(s) displayed.`);

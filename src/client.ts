@@ -6,6 +6,7 @@ import {
   deriveKeyFromPassphrase,
   encryptMessage,
   decryptMessage,
+  getMessageText,
 } from './crypto/encrypt.js';
 import {
   deriveKeypairFromSignature,
@@ -50,6 +51,7 @@ import { withRetry } from './retry.js';
 export class Clawntenna {
   readonly provider: ethers.JsonRpcProvider;
   readonly chainName: ChainName;
+  readonly historyApiKey: string | null;
 
   private _signer: ethers.Signer | null;
   private _address: string | null;
@@ -85,6 +87,7 @@ export class Clawntenna {
 
     const rpcUrl = options.rpcUrl ?? chain.rpc;
     this.provider = new ethers.JsonRpcProvider(rpcUrl);
+    this.historyApiKey = options.historyApiKey ?? null;
 
     const registryAddr = options.registryAddress ?? chain.registry;
     const keyManagerAddr = options.keyManagerAddress ?? chain.keyManager;
@@ -157,6 +160,18 @@ export class Clawntenna {
     return this._address;
   }
 
+  supportsIndexedHistory(): boolean {
+    return Boolean(CHAINS[this.chainName].explorerApi);
+  }
+
+  getIndexedHistorySource(): string | null {
+    const api = CHAINS[this.chainName].explorerApi;
+    if (!api) return null;
+    if (api.includes('routescan')) return 'RouteScan';
+    if (api.includes('basescan')) return 'BaseScan';
+    return 'Explorer API';
+  }
+
   // ===== MESSAGING =====
 
   /**
@@ -183,7 +198,10 @@ export class Clawntenna {
         const messages = await this.readMessages(topicId, { limit: 50 });
         const original = messages.find(m => m.txHash === options.replyTo);
         if (original) {
-          replyText = replyText || original.text.slice(0, 100);
+          const originalText = getMessageText(original.content);
+          if (originalText) {
+            replyText = replyText || originalText.slice(0, 100);
+          }
           replyAuthor = replyAuthor || original.sender;
         }
       } catch {
@@ -244,49 +262,51 @@ export class Clawntenna {
   async readMessages(topicId: number, options?: ReadOptions): Promise<Message[]> {
     const limit = options?.limit ?? 50;
     const key = await this.getEncryptionKey(topicId);
-    const filter = this.registry.filters.MessageSent(topicId);
-
-    // Chunked log fetching to stay within RPC limits (e.g. Avalanche 2048 block cap)
-    const CHUNK_SIZE = 2000;
-    const currentBlock = await this.provider.getBlockNumber();
     const chain = CHAINS[this.chainName];
+
+    if (options?.fromBlock == null && chain.explorerApi) {
+      return this._readMessagesFromExplorer(topicId, limit, key);
+    }
+
+    const filter = this.registry.filters.MessageSent(topicId);
+    const currentBlock = await this.provider.getBlockNumber();
+    const chunkSize = chain.logChunkSize;
     const maxRange = options?.fromBlock != null ? currentBlock - options.fromBlock : chain.defaultLookback;
     const startBlock = currentBlock - maxRange;
 
     const allEvents: ethers.EventLog[] = [];
     let toBlock = currentBlock;
+    let batchSpan = chunkSize;
 
     while (toBlock > startBlock && allEvents.length < limit) {
-      const chunkFrom = Math.max(toBlock - CHUNK_SIZE + 1, startBlock);
-      const events = await this._wrapRpcError(
-        () => this.registry.queryFilter(filter, chunkFrom, toBlock),
-        'readMessages',
+      const batchFrom = Math.max(toBlock - batchSpan + 1, startBlock);
+      const queryCount = Math.ceil((toBlock - batchFrom + 1) / chunkSize);
+      options?.onProgress?.({
+        fromBlock: batchFrom,
+        toBlock,
+        queryCount,
+      });
+
+      const events = await this._queryFilterChunked(
+        this.registry,
+        filter,
+        batchFrom,
+        toBlock,
+        chunkSize,
       );
+
       // Prepend since we're walking backwards
       allEvents.unshift(...(events as ethers.EventLog[]));
-      toBlock = chunkFrom - 1;
+      toBlock = batchFrom - 1;
+
+      if (options?.fromBlock != null) {
+        batchSpan = chunkSize;
+      } else {
+        batchSpan = Math.min(batchSpan * 2, Math.max(toBlock - startBlock + 1, chunkSize));
+      }
     }
 
-    const recent = allEvents.slice(-limit);
-    const messages: Message[] = [];
-
-    for (const log of recent) {
-      const payloadStr = ethers.toUtf8String(log.args.payload);
-      const parsed = decryptMessage(payloadStr, key);
-
-      messages.push({
-        topicId,
-        sender: log.args.sender,
-        text: parsed?.text ?? '[decryption failed]',
-        replyTo: parsed?.replyTo ?? null,
-        mentions: parsed?.mentions ?? null,
-        timestamp: Number(log.args.timestamp),
-        txHash: log.transactionHash,
-        blockNumber: log.blockNumber,
-      });
-    }
-
-    return messages;
+    return allEvents.slice(-limit).map((log) => this._decodeMessageLog(topicId, key, log));
   }
 
   /**
@@ -313,14 +333,12 @@ export class Clawntenna {
     ) => {
       if (!key) return;
       const payloadStr = ethers.toUtf8String(payload);
-      const parsed = decryptMessage(payloadStr, key);
+      const content = decryptMessage(payloadStr, key);
 
       callback({
         topicId: Number(tId),
         sender,
-        text: parsed?.text ?? '[decryption failed]',
-        replyTo: parsed?.replyTo ?? null,
-        mentions: parsed?.mentions ?? null,
+        content,
         timestamp: Number(timestamp),
         txHash: event.transactionHash,
         blockNumber: event.blockNumber,
@@ -983,7 +1001,93 @@ export class Clawntenna {
       );
       results.push(...(chunk as ethers.EventLog[]));
     }
+
     return results;
+  }
+
+  private async _readMessagesFromExplorer(topicId: number, limit: number, key: Uint8Array): Promise<Message[]> {
+    const chain = CHAINS[this.chainName];
+    if (!chain.explorerApi) {
+      throw new Error(`Indexed history is not configured for ${this.chainName}.`);
+    }
+
+    const url = new URL(chain.explorerApi);
+    url.searchParams.set('module', 'logs');
+    url.searchParams.set('action', 'getLogs');
+    url.searchParams.set('fromBlock', '0');
+    url.searchParams.set('toBlock', 'latest');
+    url.searchParams.set('address', chain.registry);
+    url.searchParams.set('topic0', ethers.id('MessageSent(uint256,address,bytes,uint256)'));
+    url.searchParams.set('topic1', ethers.zeroPadValue(ethers.toBeHex(topicId), 32));
+    url.searchParams.set('topic0_1_opr', 'and');
+    url.searchParams.set('page', '1');
+    url.searchParams.set('offset', String(limit));
+    url.searchParams.set('sort', 'desc');
+    if (this.historyApiKey) {
+      url.searchParams.set('apikey', this.historyApiKey);
+    }
+
+    const response = await withRetry(() => fetch(url));
+    if (!response.ok) {
+      throw new Error(`Historical message lookup failed with HTTP ${response.status}.`);
+    }
+
+    const body = await response.json() as {
+      status?: string;
+      message?: string;
+      result?: Array<{
+        data: string;
+        topics: string[];
+        transactionHash: string;
+        blockNumber: string;
+        logIndex: string;
+      }> | string;
+    };
+
+    if (Array.isArray(body.result)) {
+      const iface = new ethers.Interface(REGISTRY_ABI);
+      const decoded = body.result
+        .map((log) => {
+          const parsed = iface.parseLog({
+            topics: log.topics,
+            data: log.data,
+          });
+          if (!parsed || parsed.name !== 'MessageSent') return null;
+          return this._decodeMessageLog(topicId, key, {
+            args: parsed.args,
+            transactionHash: log.transactionHash,
+            blockNumber: Number(log.blockNumber),
+          } as ethers.EventLog);
+        })
+        .filter((msg): msg is Message => msg !== null);
+
+      decoded.sort((a, b) => a.blockNumber - b.blockNumber);
+      return decoded;
+    }
+
+    if (body.message === 'No records found') {
+      return [];
+    }
+
+    throw new Error(`Historical message lookup failed: ${body.message ?? 'unexpected explorer response'}.`);
+  }
+
+  private _decodeMessageLog(
+    topicId: number,
+    key: Uint8Array,
+    log: Pick<ethers.EventLog, 'args' | 'transactionHash' | 'blockNumber'>,
+  ): Message {
+    const payloadStr = ethers.toUtf8String(log.args.payload);
+    const content = decryptMessage(payloadStr, key);
+
+    return {
+      topicId,
+      sender: log.args.sender,
+      content,
+      timestamp: Number(log.args.timestamp),
+      txHash: log.transactionHash,
+      blockNumber: log.blockNumber,
+    };
   }
 
   // ===== ESCROW INBOX (deposit → message bridge) =====
@@ -1073,7 +1177,7 @@ export class Clawntenna {
           const receipt = await this.provider.getTransactionReceipt(txHash);
           if (receipt) {
             const msg = await this._parseMessageFromReceipt(receipt);
-            messageText = msg?.text ?? null;
+            messageText = msg ? getMessageText(msg.content) : null;
           }
         } catch {
           // Non-fatal: message text stays null
@@ -1125,12 +1229,11 @@ export class Clawntenna {
           const payloadBytes = parsed.args.payload as string;
           const timestamp = Number(parsed.args.timestamp);
 
-          let text = '[unable to decrypt]';
+          let content: unknown = null;
           try {
             const key = await this.getEncryptionKey(topicId);
             const payloadStr = ethers.toUtf8String(payloadBytes);
-            const result = decryptMessage(payloadStr, key);
-            if (result) text = result.text;
+            content = decryptMessage(payloadStr, key);
           } catch {
             // Decryption failed — private topic without key loaded
           }
@@ -1138,9 +1241,7 @@ export class Clawntenna {
           return {
             topicId,
             sender,
-            text,
-            replyTo: null,
-            mentions: null,
+            content,
             timestamp,
             txHash: receipt.hash,
             blockNumber: receipt.blockNumber,

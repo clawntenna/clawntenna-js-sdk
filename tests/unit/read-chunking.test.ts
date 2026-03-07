@@ -1,115 +1,119 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
-/**
- * Tests for the chunked block range logic used in readMessages().
- * We test the chunking algorithm in isolation without hitting real RPCs.
- */
-describe('chunked log fetching logic', () => {
-  const CHUNK_SIZE = 2000;
-
-  function simulateChunkedFetch(
+describe('adaptive log fetching logic', () => {
+  function simulateAdaptiveFetch(
     currentBlock: number,
     maxRange: number,
     limit: number,
-    eventsPerChunk: number[],
-  ): { queriedRanges: [number, number][]; totalEvents: number } {
+    eventsPerBatch: number[],
+    chunkSize: number,
+  ): { queriedRanges: [number, number, number][]; totalEvents: number } {
     const startBlock = currentBlock - maxRange;
-    const queriedRanges: [number, number][] = [];
+    const queriedRanges: [number, number, number][] = [];
     let totalEvents = 0;
     let toBlock = currentBlock;
+    let batchSpan = chunkSize;
+    let batchIndex = 0;
 
-    let chunkIndex = 0;
     while (toBlock > startBlock && totalEvents < limit) {
-      const chunkFrom = Math.max(toBlock - CHUNK_SIZE + 1, startBlock);
-      queriedRanges.push([chunkFrom, toBlock]);
-      totalEvents += eventsPerChunk[chunkIndex] ?? 0;
-      toBlock = chunkFrom - 1;
-      chunkIndex++;
+      const batchFrom = Math.max(toBlock - batchSpan + 1, startBlock);
+      const queryCount = Math.ceil((toBlock - batchFrom + 1) / chunkSize);
+      queriedRanges.push([batchFrom, toBlock, queryCount]);
+      totalEvents += eventsPerBatch[batchIndex] ?? 0;
+      toBlock = batchFrom - 1;
+      batchSpan = Math.min(batchSpan * 2, Math.max(toBlock - startBlock + 1, chunkSize));
+      batchIndex++;
     }
 
     return { queriedRanges, totalEvents };
   }
 
-  it('queries in chunks of 2000 blocks', () => {
-    const { queriedRanges } = simulateChunkedFetch(
-      10000, // currentBlock
-      6000,  // maxRange
-      50,    // limit
-      [0, 0, 0], // no events
+  it('starts with a small recent window and expands exponentially', () => {
+    const { queriedRanges } = simulateAdaptiveFetch(
+      10000,
+      7000,
+      50,
+      [0, 0, 0],
+      1000,
     );
 
     expect(queriedRanges).toEqual([
-      [8001, 10000],
-      [6001, 8000],
-      [4001, 6000],
+      [9001, 10000, 1],
+      [7001, 9000, 2],
+      [3001, 7000, 4],
     ]);
   });
 
-  it('stops early when enough events collected', () => {
-    const { queriedRanges, totalEvents } = simulateChunkedFetch(
+  it('stops after the first batch when enough recent events are found', () => {
+    const { queriedRanges, totalEvents } = simulateAdaptiveFetch(
       10000,
       100000,
       10,
-      [15], // First chunk returns 15 events (>= limit of 10)
+      [15],
+      1000,
     );
 
-    expect(queriedRanges.length).toBe(1);
+    expect(queriedRanges).toEqual([
+      [9001, 10000, 1],
+    ]);
     expect(totalEvents).toBe(15);
   });
 
-  it('handles range smaller than chunk size', () => {
-    const { queriedRanges } = simulateChunkedFetch(
-      1500,  // currentBlock
-      1000,  // maxRange (only 1000 blocks)
+  it('handles ranges smaller than the chunk size', () => {
+    const { queriedRanges } = simulateAdaptiveFetch(
+      1500,
+      1000,
       50,
       [0],
+      1000,
     );
 
     expect(queriedRanges).toEqual([
-      [500, 1500],
+      [501, 1500, 1],
     ]);
   });
 
-  it('handles exact chunk size boundary', () => {
-    const { queriedRanges } = simulateChunkedFetch(
-      4000,
-      4000,
+  it('handles exact chunk-size boundaries', () => {
+    const { queriedRanges } = simulateAdaptiveFetch(
+      2000,
+      1000,
       50,
-      [0, 0],
+      [0],
+      1000,
     );
 
     expect(queriedRanges).toEqual([
-      [2001, 4000],
-      [1, 2000],
+      [1001, 2000, 1],
     ]);
   });
 
-  it('accumulates events across chunks', () => {
-    const { totalEvents, queriedRanges } = simulateChunkedFetch(
-      10000,
-      100000,
+  it('caps the last batch at the startBlock boundary', () => {
+    const { queriedRanges } = simulateAdaptiveFetch(
+      3500,
+      3000,
       50,
-      [5, 10, 8, 15, 20], // Each chunk returns some events
+      [0, 0, 0],
+      1000,
     );
 
-    // Should stop after enough chunks to get >= 50 events
-    // 5 + 10 + 8 + 15 + 20 = 58 >= 50, so 5 chunks
-    expect(queriedRanges.length).toBe(5);
-    expect(totalEvents).toBe(58);
+    expect(queriedRanges).toEqual([
+      [2501, 3500, 1],
+      [501, 2500, 2],
+    ]);
   });
 
-  it('clamps fromBlock to startBlock', () => {
-    const { queriedRanges } = simulateChunkedFetch(
-      3500,  // currentBlock
-      3000,  // maxRange → startBlock = 500
-      50,
-      [0, 0],
+  it('reduces total round-trips versus fixed 1000-block stepping', () => {
+    const { queriedRanges } = simulateAdaptiveFetch(
+      43051814,
+      200000,
+      20,
+      Array(8).fill(0),
+      1000,
     );
 
-    // First: [1501, 3500], Second: [501, 1500] (clamped to startBlock=500+1)
-    // Actually: startBlock = 3500 - 3000 = 500
-    // chunkFrom = Math.max(3500 - 2000 + 1, 500) = 1501
-    expect(queriedRanges[0]).toEqual([1501, 3500]);
-    expect(queriedRanges[1]).toEqual([500, 1500]);
+    expect(queriedRanges.length).toBe(8);
+    expect(queriedRanges[0]).toEqual([43050815, 43051814, 1]);
+    expect(queriedRanges[1]).toEqual([43048815, 43050814, 2]);
+    expect(queriedRanges[2]).toEqual([43044815, 43048814, 4]);
   });
 });

@@ -1,6 +1,6 @@
 {
   "name": "clawntenna",
-  "version": "0.12.4",
+  "version": "0.12.5",
   "contractVersion": "11.0.0",
   "escrowVersion": "5.0.0",
   "schemaRegistryVersion": "2.0.0",
@@ -25,14 +25,22 @@
   "moltbot": {
     "emoji": "🦞",
     "category": "messaging",
-    "chains": ["base", "avalanche", "baseSepolia"],
+    "chains": [
+      "base",
+      "avalanche",
+      "baseSepolia"
+    ],
     "files": {
       "SKILL.md": "https://clawntenna.com/skill.md",
       "HEARTBEAT.md": "https://clawntenna.com/heartbeat.md"
     },
     "requires": {
-      "bins": ["node"],
-      "packages": ["ethers"]
+      "bins": [
+        "node"
+      ],
+      "packages": [
+        "ethers"
+      ]
     },
     "triggers": [
       "clawntenna",

@@ -25,17 +25,15 @@ export async function subscribe(topicId: number, flags: CommonFlags) {
         if (json) {
           console.log(JSON.stringify({
             sender: msg.sender,
-            text: msg.text,
-            replyTo: msg.replyTo,
-            mentions: msg.mentions,
+            content: msg.content,
             timestamp: msg.timestamp.toString(),
             txHash: msg.txHash,
             blockNumber: msg.blockNumber,
           }));
         } else {
           const time = new Date(Number(msg.timestamp) * 1000).toISOString().slice(0, 19).replace('T', ' ');
-          const reply = msg.replyTo ? ` (reply to ${msg.replyTo.slice(0, 10)}...)` : '';
-          console.log(`[${time}] ${msg.sender.slice(0, 8)}...: ${msg.text}${reply}`);
+          const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+          console.log(`[${time}] ${msg.sender.slice(0, 8)}...: ${content}`);
         }
       }
 

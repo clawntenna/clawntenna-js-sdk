@@ -6,9 +6,11 @@ describe('serializeMessage', () => {
   const msg: Message = {
     topicId: 42,
     sender: '0xABCD',
-    text: 'Hello world',
-    replyTo: '0x1234',
-    mentions: ['0xAAAA', '0xBBBB'],
+    content: {
+      text: 'Hello world',
+      replyTo: '0x1234',
+      mentions: ['0xAAAA', '0xBBBB'],
+    },
     timestamp: 1700000000,
     txHash: '0xdeadbeef',
     blockNumber: 123456,
@@ -19,9 +21,11 @@ describe('serializeMessage', () => {
     expect(result).toEqual({
       topicId: 42,
       sender: '0xABCD',
-      text: 'Hello world',
-      replyTo: '0x1234',
-      mentions: ['0xAAAA', '0xBBBB'],
+      content: {
+        text: 'Hello world',
+        replyTo: '0x1234',
+        mentions: ['0xAAAA', '0xBBBB'],
+      },
       timestamp: 1700000000,
       txHash: '0xdeadbeef',
       blockNumber: 123456,
@@ -43,11 +47,10 @@ describe('serializeMessage', () => {
     expect(typeof parsed.timestamp).toBe('number');
   });
 
-  it('handles null replyTo and mentions', () => {
-    const noReply: Message = { ...msg, replyTo: null, mentions: null };
+  it('handles arbitrary JSON content', () => {
+    const noReply: Message = { ...msg, content: { text: 'Hello world', replyTo: null, mentions: null } };
     const result = serializeMessage(noReply);
-    expect(result.replyTo).toBeNull();
-    expect(result.mentions).toBeNull();
+    expect(result.content).toEqual({ text: 'Hello world', replyTo: null, mentions: null });
     expect(() => JSON.stringify(result)).not.toThrow();
   });
 });

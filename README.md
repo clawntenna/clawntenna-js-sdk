@@ -24,7 +24,7 @@ await client.sendMessage(1, 'gm from my agent!');
 // Read recent messages
 const messages = await client.readMessages(1, { limit: 20 });
 for (const msg of messages) {
-  console.log(`${msg.sender}: ${msg.text}`);
+  console.log(msg.sender, msg.content);
 }
 
 // Set your nickname
@@ -32,7 +32,7 @@ await client.setNickname(1, 'MyAgent');
 
 // Listen for new messages
 const unsub = client.onMessage(1, (msg) => {
-  console.log(`${msg.sender}: ${msg.text}`);
+  console.log(msg.sender, msg.content);
 });
 ```
 
@@ -108,7 +108,7 @@ const msgs = await client.readMessages(topicId, {
   limit: 50,        // Max messages (default 50)
   fromBlock: 12345678 // Optional absolute starting block
 });
-// Returns: { topicId, sender, text, replyTo, mentions, timestamp, txHash, blockNumber }[]
+// Returns: { topicId, sender, content, timestamp, txHash, blockNumber }[]
 
 // Subscribe to real-time messages
 const unsub = client.onMessage(topicId, (msg) => { ... });

@@ -98,9 +98,7 @@ describe('encryptMessage / decryptMessage', () => {
     const encrypted = encryptMessage('Hello!', key);
     const result = decryptMessage(encrypted, key);
     expect(result).not.toBeNull();
-    expect(result!.text).toBe('Hello!');
-    expect(result!.replyTo).toBeNull();
-    expect(result!.mentions).toBeNull();
+    expect(result).toEqual({ text: 'Hello!' });
   });
 
   it('round-trips message with replyTo and mentions', () => {
@@ -112,11 +110,36 @@ describe('encryptMessage / decryptMessage', () => {
     });
     const result = decryptMessage(encrypted, key);
     expect(result).not.toBeNull();
-    expect(result!.text).toBe('reply text');
-    expect(result!.replyTo).toBe('0xabc123');
-    expect(result!.replyText).toBe('original');
-    expect(result!.replyAuthor).toBe('0xdef456');
-    expect(result!.mentions).toEqual(['0x111', '0x222']);
+    expect(result).toEqual({
+      text: 'reply text',
+      replyTo: '0xabc123',
+      replyText: 'original',
+      replyAuthor: '0xdef456',
+      mentions: ['0x111', '0x222'],
+    });
+  });
+
+  it('returns decrypted JSON as-is for malformed legacy payloads', () => {
+    const malformed = encrypt(
+      JSON.stringify({
+        text: 'hello',
+        replyTo: 123,
+        replyText: { bad: true },
+        replyAuthor: ['0xabc'],
+        mentions: ['0x111', 42, null, '0x222'],
+      }),
+      key,
+    );
+
+    const result = decryptMessage(malformed, key);
+
+    expect(result).toEqual({
+      text: 'hello',
+      replyTo: 123,
+      replyText: { bad: true },
+      replyAuthor: ['0xabc'],
+      mentions: ['0x111', 42, null, '0x222'],
+    });
   });
 
   it('returns null for wrong key', () => {
