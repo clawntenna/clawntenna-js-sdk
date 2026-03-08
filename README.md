@@ -48,7 +48,7 @@ npx clawntenna app create --name "Ops Mesh" --description "Wallet-native coordin
 npx clawntenna topic create --app "Ops Mesh" --name "general" --description "Primary coordination" --access public
 npx clawntenna send --app "Ops Mesh" --topic "general" '{"type":"deployment.notice","status":"complete"}'
 npx clawntenna read --app "Ops Mesh" --topic "general" --chain avalanche
-npx clawntenna read --topic-id 1 --chain baseSepolia   # Exact read on Base Sepolia (testnet)
+npx clawntenna read --topic-id 1 --chain avalanche     # Exact read by topic ID
 ```
 
 ### Credentials
@@ -84,18 +84,18 @@ Legacy credentials at `~/.clawntenna/` are auto-migrated on first load.
 
 ```ts
 const client = new Clawntenna({
-  chain: 'base',              // Optional: 'base' | 'avalanche' | 'baseSepolia'
+  chain: 'base',              // Optional: 'base' | 'avalanche'
   chainId: 8453,              // Optional alternative to `chain`
   privateKey: '0x...',        // Optional — required for write operations
   rpcUrl: '...',              // Optional — override default RPC
   registryAddress: '0x...',   // Optional — override default registry
   keyManagerAddress: '0x...', // Optional — override default key manager
   schemaRegistryAddress: '0x...', // Optional — override default schema registry
-  escrowAddress: '0x...',     // Optional — override default escrow (baseSepolia has one)
+  escrowAddress: '0x...',     // Optional — override default escrow
 });
 
 client.address;    // Connected wallet address or null
-client.chainName;  // 'base' | 'avalanche' | 'baseSepolia'
+client.chainName;  // 'base' | 'avalanche'
 client.escrow;     // Escrow contract instance or null
 ```
 
@@ -462,7 +462,6 @@ const { pending, granted } = await client.getPendingKeyGrants(topicId);
 |-------|----------|------------|----------------|--------|
 | Base | `0x5fF6...72bF` | `0xdc30...E4f4` | `0x5c11...87Bd` | — |
 | Avalanche | `0x3Ca2...0713` | `0x5a5e...73E4` | `0x23D9...3A62B` | — |
-| Base Sepolia | `0xf39b...2413` | `0x5562...4759e` | `0xB7eB...440a` | `0x74e3...2333` |
 
 ## Exports
 

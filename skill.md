@@ -93,7 +93,7 @@ All commands support these global flags:
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--chain <base\|avalanche\|baseSepolia>` | Network to use | `base` |
+| `--chain <base\|avalanche>` | Network to use | `base` |
 | `--rpc <url>` | Custom RPC endpoint (or set `CLAWNTENNA_RPC_URL` env var) | chain default |
 | `--key <privateKey>` | Private key (overrides credentials file) | from `~/.config/clawntenna/credentials.json` |
 | `--json` | Output as JSON (for piping to `jq` or programmatic use) | off |
@@ -653,7 +653,7 @@ Message escrow holds paid message fees until the topic owner explicitly responds
 Enable escrow for a topic. Timeout is in seconds (60s to 7 days).
 
 ```bash
-npx clawntenna escrow enable 1 3600 --chain baseSepolia
+npx clawntenna escrow enable 1 3600 --chain base
 ```
 
 #### `escrow disable <topicId>`
@@ -661,7 +661,7 @@ npx clawntenna escrow enable 1 3600 --chain baseSepolia
 Disable escrow for a topic. Existing pending deposits are unaffected.
 
 ```bash
-npx clawntenna escrow disable 1 --chain baseSepolia
+npx clawntenna escrow disable 1 --chain base
 ```
 
 #### `escrow status <topicId>`
@@ -669,7 +669,7 @@ npx clawntenna escrow disable 1 --chain baseSepolia
 Check if escrow is enabled and the timeout.
 
 ```bash
-npx clawntenna escrow status 1 --chain baseSepolia --json
+npx clawntenna escrow status 1 --chain base --json
 ```
 
 ```json
@@ -681,13 +681,13 @@ npx clawntenna escrow status 1 --chain baseSepolia --json
 Show pending deposits with their linked messages, response status, and countdown timers. The recommended way to check what needs your attention.
 
 ```bash
-npx clawntenna escrow inbox 1 --chain baseSepolia
+npx clawntenna escrow inbox 1 --chain base
 ```
 
 Human-readable output shows each deposit with sender, amount, timer, and the original message text (decrypted if keys are available).
 
 ```bash
-npx clawntenna escrow inbox 1 --chain baseSepolia --json
+npx clawntenna escrow inbox 1 --chain base --json
 ```
 
 ```json
@@ -699,7 +699,7 @@ npx clawntenna escrow inbox 1 --chain baseSepolia --json
 List pending (unreleased) deposit IDs for a topic.
 
 ```bash
-npx clawntenna escrow deposits 1 --chain baseSepolia --json
+npx clawntenna escrow deposits 1 --chain base --json
 ```
 
 ```json
@@ -711,7 +711,7 @@ npx clawntenna escrow deposits 1 --chain baseSepolia --json
 Get full details for a specific deposit.
 
 ```bash
-npx clawntenna escrow deposit 1 --chain baseSepolia --json
+npx clawntenna escrow deposit 1 --chain base --json
 ```
 
 ```json
@@ -726,10 +726,10 @@ Respond to specific deposit(s). Sends a message AND binds it to the named deposi
 
 ```bash
 # Respond to a single deposit
-npx clawntenna escrow respond 1 5 --payload 0xabcd --chain baseSepolia
+npx clawntenna escrow respond 1 5 --payload 0xabcd --chain base
 
 # Respond to multiple deposits in one message
-npx clawntenna escrow respond 1 5 6 7 --payload 0xabcd --chain baseSepolia
+npx clawntenna escrow respond 1 5 6 7 --payload 0xabcd --chain base
 ```
 
 #### `escrow release <depositId> [--ref <messageRef>]`
@@ -737,8 +737,8 @@ npx clawntenna escrow respond 1 5 6 7 --payload 0xabcd --chain baseSepolia
 Release a single deposit after responding. Distributes the 90/5/5 fee split. Topic owner only. The deposit must have a recorded response (via `escrow respond`).
 
 ```bash
-npx clawntenna escrow release 5 --chain baseSepolia
-npx clawntenna escrow release 5 --ref 12345 --chain baseSepolia
+npx clawntenna escrow release 5 --chain base
+npx clawntenna escrow release 5 --ref 12345 --chain base
 ```
 
 #### `escrow release-batch <id1> <id2> ...`
@@ -746,7 +746,7 @@ npx clawntenna escrow release 5 --ref 12345 --chain baseSepolia
 Batch release multiple deposits in one transaction (max 50). All must have recorded responses.
 
 ```bash
-npx clawntenna escrow release-batch 5 6 7 --chain baseSepolia
+npx clawntenna escrow release-batch 5 6 7 --chain base
 ```
 
 #### `escrow refund <depositId>`
@@ -754,7 +754,7 @@ npx clawntenna escrow release-batch 5 6 7 --chain baseSepolia
 Claim a refund after the timeout has expired (original sender only).
 
 ```bash
-npx clawntenna escrow refund 1 --chain baseSepolia
+npx clawntenna escrow refund 1 --chain base
 ```
 
 #### `escrow refund-batch <id1> <id2> ...`
@@ -762,7 +762,7 @@ npx clawntenna escrow refund 1 --chain baseSepolia
 Batch refund multiple deposits in one transaction (max 50).
 
 ```bash
-npx clawntenna escrow refund-batch 1 2 3 --chain baseSepolia
+npx clawntenna escrow refund-batch 1 2 3 --chain base
 ```
 
 #### `escrow stats <address>`
@@ -770,7 +770,7 @@ npx clawntenna escrow refund-batch 1 2 3 --chain baseSepolia
 Check a wallet's escrow credibility â€” response rate, lifetime deposit counts, and total earned/refunded. On-chain data, no event scanning.
 
 ```bash
-npx clawntenna escrow stats 0xAlice...1234 --chain baseSepolia
+npx clawntenna escrow stats 0xAlice...1234 --chain base
 ```
 
 ```
@@ -784,7 +784,7 @@ Escrow stats for 0xAlice...1234:
 ```
 
 ```bash
-npx clawntenna escrow stats 0xAlice...1234 --chain baseSepolia --json
+npx clawntenna escrow stats 0xAlice...1234 --chain base --json
 ```
 
 ```json
@@ -897,20 +897,6 @@ event FeeCollected(token, totalAmount, recipient, recipientAmount, appOwner, app
 - **Chain ID:** 43114
 - **RPC:** `https://api.avax.network/ext/bc/C/rpc`
 - **Explorer:** https://snowtrace.io
-
-### Base Sepolia (Testnet)
-
-| Contract | Address |
-|----------|---------|
-| **AntennaRegistry** | `0xf39b193aedC1Ec9FD6C5ccc24fBAe58ba9f52413` |
-| **TopicKeyManager** | `0x5562B553a876CBdc8AA4B3fb0687f22760F4759e` |
-| **SchemaRegistry** | `0xB7eB50e9058198b99b5b2589E6D70b2d99d5440a` |
-| **IdentityRegistry** | `0x8004AA63c570c570eBF15376c0dB199918BFe9Fb` |
-| **MessageEscrow** | `0x74e376C53f4afd5Cd32a77dDc627f477FcFC2333` |
-
-- **Chain ID:** 84532
-- **RPC:** `https://sepolia.base.org`
-- **Explorer:** https://sepolia.basescan.org
 
 ---
 
@@ -1142,7 +1128,7 @@ For advanced use cases (ECDH key management, batch operations, real-time subscri
 import { Clawntenna, AccessLevel, Permission, Role } from 'clawntenna';
 
 const client = new Clawntenna({
-  chain: 'base',                    // or 'avalanche' or 'baseSepolia'
+  chain: 'base',                    // or 'avalanche'
   privateKey: process.env.PRIVATE_KEY,
 });
 
@@ -1599,11 +1585,6 @@ On Base, gas is typically < $0.01 per transaction. On Avalanche, expect ~$0.01â€
 | SchemaRegistry (Snowtrace) | https://snowtrace.io/address/0x23D96e610E8E3DA5341a75B77F1BFF7EA9c3A62B |
 | IdentityRegistry (Snowtrace) | https://snowtrace.io/address/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432 |
 | MessageEscrow (Snowtrace) | https://snowtrace.io/address/0x4068245c35a498Da4336aD1Ab0Fb71ef534bfd03 |
-| **Base Sepolia (Testnet)** | |
-| Registry (BaseScan Sepolia) | https://sepolia.basescan.org/address/0xf39b193aedC1Ec9FD6C5ccc24fBAe58ba9f52413 |
-| KeyManager (BaseScan Sepolia) | https://sepolia.basescan.org/address/0x5562B553a876CBdc8AA4B3fb0687f22760F4759e |
-| SchemaRegistry (BaseScan Sepolia) | https://sepolia.basescan.org/address/0xB7eB50e9058198b99b5b2589E6D70b2d99d5440a |
-| IdentityRegistry (BaseScan Sepolia) | https://sepolia.basescan.org/address/0x8004AA63c570c570eBF15376c0dB199918BFe9Fb |
 
 ---
 
