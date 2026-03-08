@@ -1,217 +1,35 @@
-import { existsSync, mkdirSync, writeFileSync, readFileSync, copyFileSync } from 'fs';
-import { homedir } from 'os';
-import { join } from 'path';
-import { ethers } from 'ethers';
-import type { Credentials, CredentialsV1 } from '../types.js';
-import { output } from './util.js';
+import { Credentials } from '../types.js';
 import type { SkillFilesResult } from './skill.js';
+import {
+  CONFIG_DIR,
+  CREDS_PATH,
+  DEFAULT_SECRETS_PATH,
+  LEGACY_CREDS_PATH,
+  backupFileIfExists,
+  ensureCredentials,
+  createSecureCredentials,
+  loadRawCredentials,
+  saveCredentials,
+} from './secrets.js';
 
-const CONFIG_DIR = join(homedir(), '.config', 'clawntenna');
-const CREDS_PATH = join(CONFIG_DIR, 'credentials.json');
-const CREDS_BACKUP_PATH = CREDS_PATH + '.bak';
-
-// Legacy path for migration
-const LEGACY_DIR = join(homedir(), '.clawntenna');
-const LEGACY_CREDS_PATH = join(LEGACY_DIR, 'credentials.json');
-
-function migrateV1ToV2(v1: CredentialsV1): Credentials {
-  const v2: Credentials = {
-    version: 2,
-    wallet: v1.wallet,
-    chains: {},
-  };
-
-  // Extract ECDH keypair from first app that has one
-  let ecdh: { privateKey: string; publicKey: string; registered: boolean } | null = null;
-  for (const app of Object.values(v1.apps)) {
-    if (app.ecdh) {
-      ecdh = {
-        privateKey: app.ecdh.privateKey,
-        publicKey: app.ecdh.publicKey,
-        registered: app.ecdh.registeredOnChain,
-      };
-      break;
-    }
-  }
-
-  // Migrate apps to Base (8453) since v1 had no chain awareness
-  v2.chains['8453'] = {
-    name: 'base',
-    ecdh,
-    apps: {},
-  };
-
-  for (const [appId, app] of Object.entries(v1.apps)) {
-    v2.chains['8453'].apps[appId] = {
-      name: app.name,
-      nickname: app.nickname,
-      agentTokenId: null,
-      topicKeys: app.ecdh?.topicKeys ?? {},
-    };
-  }
-
-  return v2;
-}
-
-function backupCredentials(): void {
-  if (existsSync(CREDS_PATH)) {
-    copyFileSync(CREDS_PATH, CREDS_BACKUP_PATH);
+function emit(data: unknown, json: boolean): void {
+  if (json) {
+    console.log(JSON.stringify(data, null, 2));
+  } else if (typeof data === 'string') {
+    console.log(data);
+  } else {
+    console.log(JSON.stringify(data, null, 2));
   }
 }
 
-function validateKeyAddress(creds: Credentials): void {
-  const { address, privateKey } = creds.wallet;
-  if (!privateKey || !address) return;
-  try {
-    const derived = ethers.computeAddress(privateKey);
-    if (derived.toLowerCase() !== address.toLowerCase()) {
-      throw new Error(
-        `Key mismatch in credentials.json: private key derives to ${derived} but stored address is ${address}. ` +
-        `The file may have been corrupted. A backup was saved to ${CREDS_BACKUP_PATH}.`
-      );
-    }
-  } catch (err) {
-    if (err instanceof Error && err.message.startsWith('Key mismatch')) throw err;
-    // If computeAddress fails, the private key is invalid
-    throw new Error(
-      `Invalid private key in credentials.json. The key could not be parsed. ` +
-      `A backup was saved to ${CREDS_BACKUP_PATH}.`
-    );
-  }
-}
+const STATE_PATH = `${CONFIG_DIR}/state.json`;
 
-// Dynamic imports to avoid circular dependency (state.ts and skill.ts import CONFIG_DIR from this file)
-async function runPostInit(address: string) {
+async function runPostInit(address: string, force = false) {
   const { initState } = await import('./state.js');
   const { copySkillFiles } = await import('./skill.js');
-  const stateResult = initState(address);
+  const stateResult = initState(address, force);
   const skillResult = copySkillFiles();
   return { stateResult, skillResult };
-}
-
-export async function init(json = false) {
-  // Check new path first
-  if (existsSync(CREDS_PATH)) {
-    const raw = JSON.parse(readFileSync(CREDS_PATH, 'utf-8'));
-
-    // Migrate v1 format at new path if needed
-    if (!raw.version) {
-      const migrated = migrateV1ToV2(raw as CredentialsV1);
-      backupCredentials();
-      writeFileSync(CREDS_PATH, JSON.stringify(migrated, null, 2), { mode: 0o600 });
-      const { stateResult, skillResult } = await runPostInit(migrated.wallet.address);
-      if (json) {
-        output({
-          status: 'migrated',
-          address: migrated.wallet.address,
-          path: CREDS_PATH,
-          state: { status: stateResult, path: join(CONFIG_DIR, 'state.json') },
-          skillFiles: { status: skillResult.status, path: skillResult.path, files: skillResult.files },
-        }, true);
-      } else {
-        console.log(`Migrated credentials to v2 format at ${CREDS_PATH}`);
-        console.log(`  Address: ${migrated.wallet.address}`);
-        formatPostInit(stateResult, skillResult);
-      }
-      return;
-    }
-
-    const existing: Credentials = raw;
-    const chainNames = Object.values(existing.chains).map(c => c.name);
-    const { stateResult, skillResult } = await runPostInit(existing.wallet.address);
-    if (json) {
-      output({
-        status: 'exists',
-        address: existing.wallet.address,
-        chains: chainNames,
-        path: CREDS_PATH,
-        state: { status: stateResult, path: join(CONFIG_DIR, 'state.json') },
-        skillFiles: { status: skillResult.status, path: skillResult.path, files: skillResult.files },
-      }, true);
-    } else {
-      console.log(`Credentials already exist at ${CREDS_PATH}`);
-      console.log(`  Address: ${existing.wallet.address}`);
-      console.log(`  Chains: ${chainNames.join(', ') || 'none configured'}`);
-      formatPostInit(stateResult, skillResult);
-    }
-    return;
-  }
-
-  // Check legacy path and migrate
-  if (existsSync(LEGACY_CREDS_PATH)) {
-    const raw = JSON.parse(readFileSync(LEGACY_CREDS_PATH, 'utf-8'));
-    const migrated = raw.version ? raw : migrateV1ToV2(raw as CredentialsV1);
-
-    mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
-    backupCredentials();
-    writeFileSync(CREDS_PATH, JSON.stringify(migrated, null, 2), { mode: 0o600 });
-
-    const { stateResult, skillResult } = await runPostInit(migrated.wallet.address);
-    if (json) {
-      output({
-        status: 'migrated',
-        address: migrated.wallet.address,
-        path: CREDS_PATH,
-        migratedFrom: LEGACY_CREDS_PATH,
-        state: { status: stateResult, path: join(CONFIG_DIR, 'state.json') },
-        skillFiles: { status: skillResult.status, path: skillResult.path, files: skillResult.files },
-      }, true);
-    } else {
-      console.log(`Migrated credentials from ${LEGACY_CREDS_PATH} to ${CREDS_PATH}`);
-      console.log(`  Address: ${migrated.wallet.address}`);
-      console.log(`  You can safely delete ${LEGACY_CREDS_PATH}`);
-      formatPostInit(stateResult, skillResult);
-    }
-    return;
-  }
-
-  // Fresh init
-  const wallet = ethers.Wallet.createRandom();
-
-  const credentials: Credentials = {
-    version: 2,
-    wallet: {
-      address: wallet.address,
-      privateKey: wallet.privateKey,
-    },
-    chains: {
-      '8453': {
-        name: 'base',
-        ecdh: null,
-        apps: {},
-      },
-      '43114': {
-        name: 'avalanche',
-        ecdh: null,
-        apps: {},
-      },
-    },
-  };
-
-  mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
-  writeFileSync(CREDS_PATH, JSON.stringify(credentials, null, 2), { mode: 0o600 });
-
-  const { stateResult, skillResult } = await runPostInit(wallet.address);
-  if (json) {
-    output({
-      status: 'created',
-      address: wallet.address,
-      chains: ['base', 'avalanche'],
-      path: CREDS_PATH,
-      state: { status: stateResult, path: join(CONFIG_DIR, 'state.json') },
-      skillFiles: { status: skillResult.status, path: skillResult.path, files: skillResult.files },
-    }, true);
-  } else {
-    console.log(`Wallet created at ${CREDS_PATH}`);
-    console.log(`  Address: ${wallet.address}`);
-    console.log(`  Chains: base (8453), avalanche (43114)`);
-    formatPostInit(stateResult, skillResult);
-    console.log(`  Fund with ETH on Base or AVAX on Avalanche for gas`);
-    console.log('');
-    console.log('Next steps:');
-    console.log('  npx clawntenna send --app "ClawtennaChat" --topic "general" "gm!"');
-    console.log('  npx clawntenna read --app "ClawtennaChat" --topic "general"');
-  }
 }
 
 function formatPostInit(stateResult: 'created' | 'exists', skillResult: SkillFilesResult): void {
@@ -230,29 +48,118 @@ function formatPostInit(stateResult: 'created' | 'exists', skillResult: SkillFil
   }
 }
 
-export function loadCredentials(): Credentials | null {
-  // Try new path first
-  if (existsSync(CREDS_PATH)) {
-    const raw = JSON.parse(readFileSync(CREDS_PATH, 'utf-8'));
-    const creds: Credentials = !raw.version ? migrateV1ToV2(raw as CredentialsV1) : raw;
-    validateKeyAddress(creds);
-    return creds;
+export async function init(json = false, force = false) {
+  if (force) {
+    const raw = loadRawCredentials();
+    const backupPaths: string[] = [];
+
+    const credsBackup = backupFileIfExists(CREDS_PATH);
+    if (credsBackup) backupPaths.push(credsBackup);
+
+    const legacyBackup = backupFileIfExists(LEGACY_CREDS_PATH);
+    if (legacyBackup) backupPaths.push(legacyBackup);
+
+    const existingSecretsPath =
+      raw && 'version' in raw && raw.version === 3 && 'secrets' in raw
+        ? (raw.secrets.path as string)
+        : DEFAULT_SECRETS_PATH;
+    const secretsBackup = backupFileIfExists(existingSecretsPath);
+    if (secretsBackup) backupPaths.push(secretsBackup);
+
+    const stateBackup = backupFileIfExists(STATE_PATH);
+    if (stateBackup) backupPaths.push(stateBackup);
+
+    const { credentials } = await createSecureCredentials(json);
+    saveCredentials(credentials);
+
+    const { stateResult, skillResult } = await runPostInit(credentials.wallet.address, true);
+    if (json) {
+      emit({
+        status: 'created',
+        forced: true,
+        address: credentials.wallet.address,
+        chains: ['base', 'avalanche'],
+        path: CREDS_PATH,
+        secretsPath: credentials.secrets.path,
+        backups: backupPaths,
+        state: { status: stateResult, path: `${CONFIG_DIR}/state.json` },
+        skillFiles: { status: skillResult.status, path: skillResult.path, files: skillResult.files },
+      }, true);
+    } else {
+      console.log(`Force-created new secure profile at ${CREDS_PATH}`);
+      console.log(`  Address: ${credentials.wallet.address}`);
+      console.log(`  Secrets: ${credentials.secrets.path}`);
+      console.log('  Local secrets are encrypted at rest and unlocked with your Clawntenna passphrase.');
+      if (backupPaths.length > 0) {
+        console.log('  Backups:');
+        for (const path of backupPaths) console.log(`    ${path}`);
+      }
+      console.log('  Previous credentials and state were backed up before replacement.');
+      console.log(`  Chains: base (8453), avalanche (43114)`);
+      formatPostInit(stateResult, skillResult);
+    }
+    return;
   }
 
-  // Fall back to legacy path
-  if (existsSync(LEGACY_CREDS_PATH)) {
-    const raw = JSON.parse(readFileSync(LEGACY_CREDS_PATH, 'utf-8'));
-    const creds: Credentials = !raw.version ? migrateV1ToV2(raw as CredentialsV1) : raw;
-    validateKeyAddress(creds);
-    return creds;
+  const existing = await ensureCredentials(json);
+  if (existing) {
+    const chainNames = Object.values(existing.chains).map((c) => c.name);
+    const { stateResult, skillResult } = await runPostInit(existing.wallet.address);
+    if (json) {
+      emit({
+        status: 'exists',
+        address: existing.wallet.address,
+        chains: chainNames,
+        path: CREDS_PATH,
+        state: { status: stateResult, path: `${CONFIG_DIR}/state.json` },
+        skillFiles: { status: skillResult.status, path: skillResult.path, files: skillResult.files },
+      }, true);
+    } else {
+      console.log(`Credentials already exist at ${CREDS_PATH}`);
+      console.log(`  Address: ${existing.wallet.address}`);
+      console.log(`  Chains: ${chainNames.join(', ') || 'none configured'}`);
+      console.log(`  Secrets: encrypted at ${existing.secrets.path}`);
+      console.log('  Init is safe to re-run: existing credentials are reused, not overwritten.');
+      formatPostInit(stateResult, skillResult);
+    }
+    return;
   }
 
-  return null;
+  const { credentials } = await createSecureCredentials(json);
+  saveCredentials(credentials);
+
+  const { stateResult, skillResult } = await runPostInit(credentials.wallet.address);
+  if (json) {
+    emit({
+      status: 'created',
+      address: credentials.wallet.address,
+      chains: ['base', 'avalanche'],
+      path: CREDS_PATH,
+      secretsPath: credentials.secrets.path,
+      state: { status: stateResult, path: `${CONFIG_DIR}/state.json` },
+      skillFiles: { status: skillResult.status, path: skillResult.path, files: skillResult.files },
+    }, true);
+  } else {
+    console.log(`Secure profile created at ${CREDS_PATH}`);
+    console.log(`  Address: ${credentials.wallet.address}`);
+    console.log(`  Secrets: ${credentials.secrets.path}`);
+    console.log('  Local secrets are encrypted at rest and unlocked with your Clawntenna passphrase.');
+    console.log(`  Chains: base (8453), avalanche (43114)`);
+    formatPostInit(stateResult, skillResult);
+    console.log(`  Fund with ETH on Base or AVAX on Avalanche for gas`);
+    console.log('');
+    console.log('Next steps:');
+    console.log('  npx clawntenna send --app "ClawtennaChat" --topic "general" "gm!"');
+    console.log('  npx clawntenna read --app "ClawtennaChat" --topic "general"');
+    console.log('');
+    console.log('Non-interactive unlock options:');
+    console.log('  export CLAWNTENNA_PASSPHRASE=...');
+    console.log('  export CLAWNTENNA_PASSPHRASE_COMMAND=\'aws secretsmanager get-secret-value ...\'');
+  }
 }
 
-export function saveCredentials(credentials: Credentials): void {
-  mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
-  writeFileSync(CREDS_PATH, JSON.stringify(credentials, null, 2), { mode: 0o600 });
+export async function loadCredentials(json = false): Promise<Credentials | null> {
+  return await ensureCredentials(json);
 }
 
 export { CREDS_PATH, CONFIG_DIR };

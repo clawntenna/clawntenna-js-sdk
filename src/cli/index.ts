@@ -15,11 +15,12 @@ import { feeTopicCreationSet, feeMessageSet, feeMessageGet } from './fees.js';
 import { escrowEnable, escrowDisable, escrowStatus, escrowDeposits, escrowDeposit, escrowRefund, escrowRefundBatch, escrowRespond, escrowRelease, escrowReleaseBatch, escrowInbox, escrowStats } from './escrow.js';
 import { showSkill, showHeartbeat, showSkillJson } from './skill.js';
 import { stateInit } from './state.js';
+import { secretsPassphraseSet } from './security.js';
 import { loadClient, parseCommonFlags, outputError } from './util.js';
 import { decodeContractError } from './errors.js';
 import { resolveAppId, resolveTopicId } from './selectors.js';
 
-const VERSION = '0.12.9';
+const VERSION = '0.13.0';
 
 const HELP = `
   clawntenna v${VERSION}
@@ -27,9 +28,10 @@ const HELP = `
 
   Usage:
     clawntenna <command> [options]
+    Local secrets live encrypted at ~/.config/clawntenna/secrets.enc.json
 
   Wallet & Setup:
-    init                                           Create wallet, state, and skill files
+    init [--force]                                 Create wallet, state, and skill files
     whoami [appId]                                  Show wallet address, balance, nickname, agent status
 
   Messaging:
@@ -127,6 +129,9 @@ const HELP = `
   State:
     state init                                     Initialize ~/.config/clawntenna/state.json
 
+  Security:
+    secrets passphrase set                        Re-encrypt local secrets with a new passphrase
+
   Options:
     --chain <base|avalanche|baseSepolia>  Chain to use (default: base)
     --rpc <url>                  Custom RPC endpoint (or set CLAWNTENNA_RPC_URL)
@@ -138,6 +143,7 @@ const HELP = `
 
   Examples:
     npx clawntenna init
+    npx clawntenna secrets passphrase set
     npx clawntenna app create --name "Ops Mesh" --description "Wallet-native coordination" --url https://example.com
     npx clawntenna topic create --app "Ops Mesh" --name "alerts" --description "Structured deployment events" --access limited
     npx clawntenna send --app "Ops Mesh" --topic "alerts" "deployment complete"
@@ -150,7 +156,7 @@ const HELP = `
 `;
 
 const COMMAND_HELP: Record<string, string> = {
-  init: 'Usage: clawntenna init\n       Creates wallet credentials, state, and synced skill files.',
+  init: 'Usage: clawntenna init [--force]\n       Creates wallet credentials, state, and synced skill files.\n       Safe to re-run: existing credentials are reused, not overwritten.\n       Use --force to create a fresh profile after backing up existing credentials, secrets, and state.',
   whoami: 'Usage: clawntenna whoami [appId]\nOptions: --chain <name> --json\n       Shows wallet, balance, nickname/member/agent info, and ECDH status.',
   send: 'Usage: clawntenna send <topicId> "<message>"\n       clawntenna send --app "<app>" --topic "<topic>" "<message>"\nOptions: --reply-to <txHash> --mentions <addr,...> --no-wait --json --chain <name>',
   read: 'Usage: clawntenna read <topicId>\n       clawntenna read --app "<app>" --topic "<topic>"\nOptions: --limit <N> --json --chain <name>',
@@ -212,6 +218,7 @@ const COMMAND_HELP: Record<string, string> = {
   heartbeat: 'Usage: clawntenna heartbeat\n       Prints heartbeat.md.',
   'skill-json': 'Usage: clawntenna skill-json\n       Prints skill.json.',
   'state init': 'Usage: clawntenna state init\n       Initializes ~/.config/clawntenna/state.json.',
+  'secrets passphrase': 'Usage: clawntenna secrets passphrase set [--env VAR | --command CMD]\n       Re-encrypts local secrets with a new passphrase or passphrase source.',
 };
 
 function printCommandHelp(command: string, subcommand?: string): void {
@@ -289,7 +296,7 @@ async function main() {
           printCommandHelp('init');
           return;
         }
-        await init(json);
+        await init(json, flags.force === 'true');
         break;
 
       case 'whoami': {
@@ -307,7 +314,7 @@ async function main() {
           printCommandHelp('send');
           return;
         }
-        const client = loadClient(cf);
+        const client = await loadClient(cf);
         const message = flags.message ?? args[1] ?? args[0];
         if (!message) {
           outputError('Usage: clawntenna send <topicId> "<message>" or clawntenna send --app "<app>" --topic "<topic>" "<message>"', json);
@@ -332,7 +339,7 @@ async function main() {
           printCommandHelp('read');
           return;
         }
-        const client = loadClient(cf, false);
+        const client = await loadClient(cf, false);
         const topicId = await resolveTopicId(client, {
           topicId: flags['topic-id'],
           topic: flags.topic,
@@ -351,7 +358,7 @@ async function main() {
           printCommandHelp('subscribe');
           return;
         }
-        const client = loadClient(cf, false);
+        const client = await loadClient(cf, false);
         const topicId = await resolveTopicId(client, {
           topicId: flags['topic-id'],
           topic: flags.topic,
@@ -372,7 +379,7 @@ async function main() {
           return;
         }
         if (sub === 'info') {
-          const client = loadClient(cf, false);
+          const client = await loadClient(cf, false);
           const appId = await resolveAppId(client, {
             appId: flags['app-id'],
             app: flags.app,
@@ -419,7 +426,7 @@ async function main() {
           printCommandHelp('topics');
           return;
         }
-        const client = loadClient(cf, false);
+        const client = await loadClient(cf, false);
         const appId = await resolveAppId(client, {
           appId: flags['app-id'],
           app: flags.app,
@@ -437,7 +444,7 @@ async function main() {
           return;
         }
         if (sub === 'info') {
-          const client = loadClient(cf, false);
+          const client = await loadClient(cf, false);
           const topicId = await resolveTopicId(client, {
             topicId: flags['topic-id'],
             topic: flags.topic,
@@ -448,7 +455,7 @@ async function main() {
           });
           await topicInfo(topicId, cf);
         } else if (sub === 'create') {
-          const client = loadClient(cf);
+          const client = await loadClient(cf);
           const appId = await resolveAppId(client, {
             appId: flags['app-id'],
             app: flags.app,
@@ -838,9 +845,25 @@ async function main() {
           return;
         }
         if (sub === 'init') {
-          stateInit(json);
+          await stateInit(json);
         } else {
           outputError(`Unknown state subcommand: ${sub}. Use: init`, json);
+        }
+        break;
+      }
+
+      // --- Security ---
+      case 'secrets': {
+        const sub = args[0];
+        const action = args[1];
+        if (flags.help) {
+          printCommandHelp('secrets', sub);
+          return;
+        }
+        if (sub === 'passphrase' && action === 'set') {
+          await secretsPassphraseSet(flags, json);
+        } else {
+          outputError(`Unknown secrets subcommand: ${sub}${action ? ` ${action}` : ''}. Use: passphrase set`, json);
         }
         break;
       }

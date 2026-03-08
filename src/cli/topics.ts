@@ -6,7 +6,7 @@ import { AccessLevel } from '../types.js';
 const ACCESS_NAMES = ['public', 'limited', 'private'] as const;
 
 export async function topicsList(appId: number, flags: CommonFlags) {
-  const client = loadClient(flags, false);
+  const client = await loadClient(flags, false);
   const json = flags.json ?? false;
 
   const topicIds = await client.getApplicationTopics(appId);
@@ -41,7 +41,7 @@ export async function topicsList(appId: number, flags: CommonFlags) {
 }
 
 export async function topicInfo(topicId: number, flags: CommonFlags) {
-  const client = loadClient(flags, false);
+  const client = await loadClient(flags, false);
   const json = flags.json ?? false;
 
   const t = await client.getTopic(topicId);
@@ -80,7 +80,7 @@ export async function topicCreate(
   access: string,
   flags: CommonFlags
 ) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   const levelMap: Record<string, AccessLevel> = {

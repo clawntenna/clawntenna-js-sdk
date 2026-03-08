@@ -1,13 +1,13 @@
-import { loadClient, output, outputError, chainIdForCredentials, type CommonFlags } from './util.js';
-import { loadCredentials, saveCredentials } from './init.js';
+import { loadClient, output, outputError, chainIdForCredentials, loadPrivateTopicSecrets, type CommonFlags } from './util.js';
+import { loadCredentials } from './init.js';
+import { loadSecretStore, saveCredentials, saveSecretStore } from './secrets.js';
 
 export async function keysRegister(flags: CommonFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
-  const creds = loadCredentials();
+  const creds = await loadCredentials(json);
 
   const chainId = chainIdForCredentials(flags.chain);
-  const ecdhCreds = creds?.chains[chainId]?.ecdh;
   const hadExistingRegistration = await client.hasPublicKey(client.address!);
 
   if (hadExistingRegistration && !flags.force) {
@@ -17,9 +17,8 @@ export async function keysRegister(flags: CommonFlags) {
     );
   }
 
-  if (ecdhCreds?.privateKey) {
-    client.loadECDHKeypair(ecdhCreds.privateKey);
-  } else {
+  await loadPrivateTopicSecrets(client, flags, { topicId });
+  if (!client.getECDHKeypairHex()) {
     if (!json) console.log('Deriving ECDH keypair from wallet signature...');
     await client.deriveECDHFromWallet();
   }
@@ -43,10 +42,30 @@ export async function keysRegister(flags: CommonFlags) {
     }
 
     creds.chains[chainId].ecdh = {
-      privateKey: keypair.privateKey,
       publicKey: keypair.publicKey,
+      mode: flags.force ? 'derived' : (creds.chains[chainId].ecdh?.mode ?? 'derived'),
       registered: registeredOnChain,
     };
+
+    if (creds.chains[chainId].ecdh?.mode === 'stored' && !flags.force) {
+      const store = await loadSecretStore(creds);
+      if (!store.chains[chainId]) {
+        store.chains[chainId] = { ecdh: null, apps: {} };
+      }
+      store.chains[chainId].ecdh = {
+        privateKey: keypair.privateKey,
+        publicKey: keypair.publicKey,
+      };
+      await saveSecretStore(creds, store);
+    } else {
+      creds.chains[chainId].ecdh.mode = 'derived';
+      const store = await loadSecretStore(creds);
+      if (store.chains[chainId]?.ecdh) {
+        store.chains[chainId].ecdh = null;
+        await saveSecretStore(creds, store);
+      }
+    }
+
     saveCredentials(creds);
   }
 
@@ -69,7 +88,7 @@ export async function keysRegister(flags: CommonFlags) {
 }
 
 export async function keysCheck(address: string, flags: CommonFlags) {
-  const client = loadClient(flags, false);
+  const client = await loadClient(flags, false);
   const json = flags.json ?? false;
 
   const hasKey = await client.hasPublicKey(address);
@@ -82,17 +101,9 @@ export async function keysCheck(address: string, flags: CommonFlags) {
 }
 
 export async function keysGrant(topicId: number, address: string, flags: CommonFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
-  const creds = loadCredentials();
-
-  const chainId = chainIdForCredentials(flags.chain);
-  const ecdhCreds = creds?.chains[chainId]?.ecdh;
-  if (ecdhCreds?.privateKey) {
-    client.loadECDHKeypair(ecdhCreds.privateKey);
-  } else {
-    await client.deriveECDHFromWallet();
-  }
+  await loadPrivateTopicSecrets(client, flags);
 
   if (!json) console.log(`Fetching topic key for topic ${topicId}...`);
   const topicKey = await client.getOrInitializeTopicKey(topicId);
@@ -110,7 +121,7 @@ export async function keysGrant(topicId: number, address: string, flags: CommonF
 }
 
 export async function keysRevoke(topicId: number, address: string, flags: CommonFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Revoking key access for ${address} on topic ${topicId}...`);
@@ -127,7 +138,7 @@ export async function keysRevoke(topicId: number, address: string, flags: Common
 }
 
 export async function keysRotate(topicId: number, flags: CommonFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Rotating key for topic ${topicId}...`);
@@ -144,7 +155,7 @@ export async function keysRotate(topicId: number, flags: CommonFlags) {
 }
 
 export async function keysPending(topicId: number, flags: CommonFlags) {
-  const client = loadClient(flags, false);
+  const client = await loadClient(flags, false);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Checking pending key grants for topic ${topicId}...`);
@@ -170,7 +181,7 @@ export async function keysPending(topicId: number, flags: CommonFlags) {
 }
 
 export async function keysHas(topicId: number, address: string, flags: CommonFlags) {
-  const client = loadClient(flags, false);
+  const client = await loadClient(flags, false);
   const json = flags.json ?? false;
 
   const has = await client.hasKeyAccess(topicId, address);

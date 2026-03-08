@@ -1284,7 +1284,7 @@ export class Clawntenna {
   }
 
   /**
-   * Load ECDH keypair from a hex private key (e.g. from credentials file).
+   * Load ECDH keypair from a hex private key (e.g. from encrypted local secrets or your own secure key manager).
    */
   loadECDHKeypair(privateKeyHex: string): void {
     const { privateKey, publicKey } = keypairFromPrivateKey(privateKeyHex);

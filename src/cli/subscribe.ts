@@ -3,7 +3,7 @@ import { loadClient, output, type CommonFlags } from './util.js';
 const POLL_INTERVAL = 15_000; // 15 seconds
 
 export async function subscribe(topicId: number, flags: CommonFlags) {
-  const client = loadClient(flags, false);
+  const client = await loadClient(flags, false);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Listening for messages on topic ${topicId} (${flags.chain}, polling every ${POLL_INTERVAL / 1000}s)...\n`);

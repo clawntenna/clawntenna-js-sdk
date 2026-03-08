@@ -1,7 +1,7 @@
 import { loadClient, output, type CommonFlags } from './util.js';
 
 export async function agentRegister(appId: number, tokenId: number, flags: CommonFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Registering agent identity (token #${tokenId}) in app ${appId}...`);
@@ -18,7 +18,7 @@ export async function agentRegister(appId: number, tokenId: number, flags: Commo
 }
 
 export async function agentClear(appId: number, flags: CommonFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Clearing agent identity in app ${appId}...`);
@@ -35,7 +35,7 @@ export async function agentClear(appId: number, flags: CommonFlags) {
 }
 
 export async function agentInfo(appId: number, address: string, flags: CommonFlags) {
-  const client = loadClient(flags, false);
+  const client = await loadClient(flags, false);
   const json = flags.json ?? false;
 
   const [hasAgent, tokenId] = await Promise.all([

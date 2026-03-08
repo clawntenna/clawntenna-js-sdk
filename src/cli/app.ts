@@ -3,7 +3,7 @@ import { REGISTRY_ABI } from '../contracts.js';
 import { loadClient, output, outputError, type CommonFlags } from './util.js';
 
 export async function appInfo(appId: number, flags: CommonFlags) {
-  const client = loadClient(flags, false);
+  const client = await loadClient(flags, false);
   const json = flags.json ?? false;
   const app = await client.getApplication(appId);
 
@@ -40,7 +40,7 @@ export async function appCreate(
   isPublic: boolean,
   flags: CommonFlags
 ) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Creating application "${name}" on ${flags.chain}...`);
@@ -65,7 +65,7 @@ export async function appCreate(
 }
 
 export async function appUpdateUrl(appId: number, url: string, flags: CommonFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Updating frontend URL for app ${appId}...`);
@@ -82,7 +82,7 @@ export async function appUpdateUrl(appId: number, url: string, flags: CommonFlag
 }
 
 export async function appTransferOwnership(appId: number, newOwner: string, flags: CommonFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Starting ownership transfer for app ${appId} to ${newOwner}...`);
@@ -100,7 +100,7 @@ export async function appTransferOwnership(appId: number, newOwner: string, flag
 }
 
 export async function appAcceptOwnership(appId: number, flags: CommonFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Accepting ownership of app ${appId}...`);
@@ -118,7 +118,7 @@ export async function appAcceptOwnership(appId: number, flags: CommonFlags) {
 }
 
 export async function appCancelTransfer(appId: number, flags: CommonFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Cancelling ownership transfer for app ${appId}...`);
@@ -136,7 +136,7 @@ export async function appCancelTransfer(appId: number, flags: CommonFlags) {
 }
 
 export async function appPendingOwner(appId: number, flags: CommonFlags) {
-  const client = loadClient(flags, false);
+  const client = await loadClient(flags, false);
   const json = flags.json ?? false;
 
   const pending = await client.getPendingApplicationOwner(appId);

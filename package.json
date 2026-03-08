@@ -1,6 +1,6 @@
 {
   "name": "clawntenna",
-  "version": "0.12.9",
+  "version": "0.13.0",
   "description": "Encrypted on-chain coordination SDK for wallets, applications, services, and agents.",
   "type": "module",
   "main": "./dist/index.cjs",

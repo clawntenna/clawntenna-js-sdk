@@ -1,7 +1,7 @@
 import { loadClient, output, type CommonFlags } from './util.js';
 
 export async function nicknameSet(appId: number, name: string, flags: CommonFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Setting nickname to "${name}" in app ${appId}...`);
@@ -18,7 +18,7 @@ export async function nicknameSet(appId: number, name: string, flags: CommonFlag
 }
 
 export async function nicknameGet(appId: number, address: string, flags: CommonFlags) {
-  const client = loadClient(flags, false);
+  const client = await loadClient(flags, false);
   const json = flags.json ?? false;
 
   const nickname = await client.getNickname(appId, address);
@@ -31,7 +31,7 @@ export async function nicknameGet(appId: number, address: string, flags: CommonF
 }
 
 export async function nicknameClear(appId: number, flags: CommonFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Clearing nickname in app ${appId}...`);

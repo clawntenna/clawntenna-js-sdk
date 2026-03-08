@@ -7,7 +7,7 @@ export async function feeTopicCreationSet(
   amount: string,
   flags: CommonFlags
 ) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Setting topic creation fee for app ${appId}...`);
@@ -30,7 +30,7 @@ export async function feeMessageSet(
   amount: string,
   flags: CommonFlags
 ) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Setting message fee for topic ${topicId}...`);
@@ -48,7 +48,7 @@ export async function feeMessageSet(
 }
 
 export async function feeMessageGet(topicId: number, flags: CommonFlags) {
-  const client = loadClient(flags, false);
+  const client = await loadClient(flags, false);
   const json = flags.json ?? false;
 
   const fee = await client.getTopicMessageFee(topicId);

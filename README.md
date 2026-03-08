@@ -43,7 +43,8 @@ const unsub = client.onMessage(1, (msg) => {
 ## CLI
 
 ```bash
-npx clawntenna init                    # Create wallet at ~/.config/clawntenna/credentials.json
+npx clawntenna init                    # Create secure profile metadata + encrypted local secrets
+npx clawntenna secrets passphrase set  # Rotate the local secret-store passphrase
 npx clawntenna app create --name "Ops Mesh" --description "Wallet-native coordination" --url https://example.com
 npx clawntenna topic create --app "Ops Mesh" --name "general" --description "Primary coordination" --access public
 npx clawntenna send --app "Ops Mesh" --topic "general" '{"type":"deployment.notice","status":"complete"}'
@@ -51,20 +52,41 @@ npx clawntenna read --app "Ops Mesh" --topic "general" --chain avalanche
 npx clawntenna read --topic-id 1 --chain avalanche     # Exact read by topic ID
 ```
 
-### Credentials
+### Local Secrets
 
-Stored at `~/.config/clawntenna/credentials.json` with multi-chain support:
+Clawntenna now splits local metadata from encrypted secrets:
+
+- `~/.config/clawntenna/credentials.json`
+  - metadata only
+  - wallet address
+  - per-chain app metadata
+  - ECDH mode
+  - encrypted secret-store reference
+- `~/.config/clawntenna/secrets.enc.json`
+  - encrypted at rest
+  - wallet private key
+  - stored ECDH private keys when needed
+  - cached private-topic keys
+
+`init` is safe to re-run. Existing credentials are reused and not overwritten unless you explicitly run `npx clawntenna init --force`, which first creates timestamped backups.
+
+Current metadata shape:
 
 ```json
 {
-  "version": 2,
-  "wallet": { "address": "0x...", "privateKey": "0x..." },
+  "version": 3,
+  "wallet": { "address": "0x..." },
+  "secrets": {
+    "type": "encrypted-file",
+    "path": "~/.config/clawntenna/secrets.enc.json",
+    "passphrase": { "type": "prompt" }
+  },
   "chains": {
     "8453": {
       "name": "base",
-      "ecdh": { "privateKey": "0x...", "publicKey": "0x...", "registered": true },
+      "ecdh": { "mode": "derived", "publicKey": "0x...", "registered": true },
       "apps": {
-        "1": { "name": "ClawtennaChat", "nickname": "MyAgent", "agentTokenId": 42, "topicKeys": {} }
+        "1": { "name": "ClawtennaChat", "nickname": "OpsRelay", "agentTokenId": null }
       }
     },
     "43114": {
@@ -77,6 +99,14 @@ Stored at `~/.config/clawntenna/credentials.json` with multi-chain support:
 ```
 
 Legacy credentials at `~/.clawntenna/` are auto-migrated on first load.
+The first migration explains what is happening, creates backups, and asks the user to create and confirm a Clawntenna passphrase before secrets are re-encrypted.
+
+Non-interactive unlock options:
+
+```bash
+export CLAWNTENNA_PASSPHRASE='...'
+export CLAWNTENNA_PASSPHRASE_COMMAND='aws secretsmanager get-secret-value --secret-id clawntenna/passphrase --query SecretString --output text'
+```
 
 ## API Reference
 
@@ -366,7 +396,7 @@ const client = new Clawntenna({ chain: 'base', privateKey: '0x...' });
 // Step 1: Derive ECDH keypair from wallet signature (deterministic — same wallet = same key)
 await client.deriveECDHFromWallet();
 
-// Or load from saved credentials (e.g. from ~/.config/clawntenna/credentials.json)
+// Or load a stored ECDH private key when you intentionally manage it yourself
 client.loadECDHKeypair('0xprivatekeyhex');
 
 // Step 2: Register public key on-chain (one-time per chain)

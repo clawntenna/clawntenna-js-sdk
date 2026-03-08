@@ -9,7 +9,7 @@ const PERM_NAMES: Record<number, string> = {
 };
 
 export async function permissionSet(topicId: number, address: string, level: number, flags: CommonFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Setting permission for ${address} on topic ${topicId} to ${PERM_NAMES[level] ?? level}...`);
@@ -26,7 +26,7 @@ export async function permissionSet(topicId: number, address: string, level: num
 }
 
 export async function permissionGet(topicId: number, address: string, flags: CommonFlags) {
-  const client = loadClient(flags, false);
+  const client = await loadClient(flags, false);
   const json = flags.json ?? false;
 
   const perm = await client.getTopicPermission(topicId, address);
@@ -39,7 +39,7 @@ export async function permissionGet(topicId: number, address: string, flags: Com
 }
 
 export async function accessCheck(topicId: number, address: string, flags: CommonFlags) {
-  const client = loadClient(flags, false);
+  const client = await loadClient(flags, false);
   const json = flags.json ?? false;
 
   const [canRead, canWrite] = await Promise.all([

@@ -1,6 +1,8 @@
 import { Clawntenna } from '../client.js';
 import { loadCredentials } from './init.js';
-import type { ChainName } from '../types.js';
+import { ensureDerivedEcdh, loadSecretStore, resolveWalletPrivateKey } from './secrets.js';
+import { AccessLevel } from '../types.js';
+import type { ChainName, Credentials } from '../types.js';
 
 export interface CommonFlags {
   chain: ChainName;
@@ -20,13 +22,13 @@ export function parseCommonFlags(flags: Record<string, string>): CommonFlags {
   };
 }
 
-export function loadClient(flags: CommonFlags, requireWallet = true): Clawntenna {
-  const creds = loadCredentials();
-  const privateKey = flags.key ?? creds?.wallet.privateKey;
+export async function loadClient(flags: CommonFlags, requireWallet = true): Promise<Clawntenna> {
+  const creds = await loadCredentials(flags.json ?? false);
+  const privateKey = flags.key ?? (requireWallet && creds ? await resolveWalletPrivateKey(creds) : undefined);
   if (requireWallet && !privateKey) {
     outputError('No wallet found. Run `npx clawntenna init` first or pass --key.', flags.json ?? false);
   }
-  // RPC priority: --rpc flag > env var > credentials chain config > built-in default
+
   const chainId = chainIdForCredentials(flags.chain);
   const credsRpc = creds?.chains[chainId]?.rpc;
   const rpcUrl = flags.rpc ?? process.env.CLAWNTENNA_RPC_URL ?? credsRpc;
@@ -37,6 +39,74 @@ export function loadClient(flags: CommonFlags, requireWallet = true): Clawntenna
     rpcUrl,
     historyApiKey,
   });
+}
+
+export async function loadPrivateTopicSecrets(
+  client: Clawntenna,
+  flags: CommonFlags,
+  options: { loadTopicKeys?: boolean; topicId?: number } = {},
+): Promise<{ credentials: Credentials | null }> {
+  const credentials = await loadCredentials(flags.json ?? false);
+  if (!credentials) {
+    if (options.topicId !== undefined || options.loadTopicKeys) {
+      try {
+        await client.deriveECDHFromWallet();
+      } catch {
+        // Ignore when no signer is available.
+      }
+    }
+    return { credentials: null };
+  }
+
+  const chainId = chainIdForCredentials(flags.chain);
+  const chain = credentials.chains[chainId];
+  if (!chain) return { credentials };
+
+  if (!options.loadTopicKeys && options.topicId !== undefined) {
+    try {
+      const topic = await client.getTopic(options.topicId);
+      if (topic.accessLevel !== AccessLevel.PRIVATE) {
+        return { credentials };
+      }
+    } catch {
+      return { credentials };
+    }
+  }
+
+  if (chain.ecdh?.mode === 'stored') {
+    const store = await loadSecretStore(credentials);
+    const ecdhPrivateKey = store.chains[chainId]?.ecdh?.privateKey;
+    if (ecdhPrivateKey) {
+      client.loadECDHKeypair(ecdhPrivateKey);
+    }
+    if (options.loadTopicKeys) {
+      applyTopicKeysFromStore(client, store, chainId);
+    }
+    return { credentials };
+  }
+
+  try {
+    const derived = await ensureDerivedEcdh(credentials, chainId);
+    client.loadECDHKeypair(derived.privateKey);
+  } catch {
+    // Non-fatal for public flows.
+  }
+
+  if (options.loadTopicKeys) {
+    const store = await loadSecretStore(credentials);
+    applyTopicKeysFromStore(client, store, chainId);
+  }
+
+  return { credentials };
+}
+
+function applyTopicKeysFromStore(client: Clawntenna, store: Awaited<ReturnType<typeof loadSecretStore>>, chainId: string): void {
+  const apps = store.chains[chainId]?.apps ?? {};
+  for (const app of Object.values(apps)) {
+    for (const [topicId, key] of Object.entries(app.topicKeys ?? {})) {
+      client.setTopicKey(Number(topicId), Buffer.from(key, 'hex'));
+    }
+  }
 }
 
 export function output(data: unknown, json: boolean): void {

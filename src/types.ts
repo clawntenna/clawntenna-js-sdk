@@ -238,15 +238,95 @@ export interface SendOptions {
 // ===== Credentials =====
 
 export interface Credentials {
+  version: 3;
+  wallet: {
+    address: string;
+  };
+  secrets: {
+    type: 'encrypted-file';
+    path: string;
+    passphrase: SecretSource;
+  };
+  chains: Record<string, CredentialChain>;
+}
+
+export type SecretSource =
+  | {
+      type: 'prompt';
+    }
+  | {
+      type: 'env';
+      env: string;
+    }
+  | {
+      type: 'command';
+      command: string;
+    };
+
+export interface CredentialChain {
+  name: string;
+  rpc?: string;
+  ecdh: {
+    mode: 'derived' | 'stored';
+    registered: boolean;
+    publicKey?: string;
+  } | null;
+  apps: Record<string, CredentialApp>;
+}
+
+export interface CredentialApp {
+  name: string;
+  nickname: string;
+  agentTokenId: number | null;
+}
+
+export interface SecretStore {
+  version: 1;
+  wallet: {
+    privateKey: string;
+  };
+  chains: Record<string, SecretStoreChain>;
+}
+
+export interface SecretStoreChain {
+  ecdh: {
+    privateKey: string;
+    publicKey: string;
+  } | null;
+  apps: Record<string, SecretStoreApp>;
+}
+
+export interface SecretStoreApp {
+  topicKeys: Record<string, string>;
+}
+
+export interface EncryptedSecretStore {
+  version: 1;
+  kdf: {
+    name: 'scrypt';
+    salt: string;
+    N: number;
+    r: number;
+    p: number;
+  };
+  cipher: {
+    name: 'aes-256-gcm';
+    iv: string;
+    tag: string;
+  };
+  ciphertext: string;
+}
+
+export interface CredentialsV2 {
   version: 2;
   wallet: {
     address: string;
     privateKey: string;
   };
-  chains: Record<string, CredentialChain>;
+  chains: Record<string, CredentialChainV2>;
 }
 
-export interface CredentialChain {
+export interface CredentialChainV2 {
   name: string;
   rpc?: string;
   ecdh: {
@@ -254,10 +334,10 @@ export interface CredentialChain {
     publicKey: string;
     registered: boolean;
   } | null;
-  apps: Record<string, CredentialApp>;
+  apps: Record<string, CredentialAppV2>;
 }
 
-export interface CredentialApp {
+export interface CredentialAppV2 {
   name: string;
   nickname: string;
   agentTokenId: number | null;

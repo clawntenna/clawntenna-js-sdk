@@ -1,5 +1,4 @@
-import { loadClient, output, chainIdForCredentials, type CommonFlags } from './util.js';
-import { loadCredentials } from './init.js';
+import { loadClient, output, loadPrivateTopicSecrets, type CommonFlags } from './util.js';
 
 export interface SendFlags extends CommonFlags {
   replyTo?: string;
@@ -8,24 +7,11 @@ export interface SendFlags extends CommonFlags {
 }
 
 export async function send(topicId: number, message: string, flags: SendFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
   const noWait = flags.noWait ?? false;
 
-  // Load ECDH credentials so private topic encryption works automatically
-  const creds = loadCredentials();
-  const chainId = chainIdForCredentials(flags.chain);
-  const ecdhCreds = creds?.chains[chainId]?.ecdh;
-  if (ecdhCreds?.privateKey) {
-    client.loadECDHKeypair(ecdhCreds.privateKey);
-  } else {
-    // No stored ECDH key — derive from wallet signature (needed for private topics)
-    try {
-      await client.deriveECDHFromWallet();
-    } catch {
-      // Non-fatal: will fail later if topic is actually private
-    }
-  }
+  await loadPrivateTopicSecrets(client, flags, { topicId });
 
   if (!json) console.log(`Sending to topic ${topicId} on ${flags.chain}...`);
 

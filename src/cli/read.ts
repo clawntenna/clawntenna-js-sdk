@@ -1,28 +1,14 @@
-import { loadClient, output, chainIdForCredentials, type CommonFlags } from './util.js';
-import { loadCredentials } from './init.js';
+import { loadClient, output, loadPrivateTopicSecrets, type CommonFlags } from './util.js';
 
 interface ReadFlags extends CommonFlags {
   limit: number;
 }
 
 export async function read(topicId: number, flags: ReadFlags) {
-  const client = loadClient(flags, false);
+  const client = await loadClient(flags, false);
   const json = flags.json ?? false;
 
-  // Load ECDH credentials so private topic decryption works automatically
-  const creds = loadCredentials();
-  const chainId = chainIdForCredentials(flags.chain);
-  const ecdhCreds = creds?.chains[chainId]?.ecdh;
-  if (ecdhCreds?.privateKey) {
-    client.loadECDHKeypair(ecdhCreds.privateKey);
-  } else {
-    // No stored ECDH key — derive from wallet signature (needed for private topics)
-    try {
-      await client.deriveECDHFromWallet();
-    } catch {
-      // Non-fatal: will fail later if topic is actually private
-    }
-  }
+  await loadPrivateTopicSecrets(client, flags, { topicId });
 
   if (!json) {
     console.log(`Reading topic ${topicId} on ${flags.chain} (last ${flags.limit} messages)...\n`);

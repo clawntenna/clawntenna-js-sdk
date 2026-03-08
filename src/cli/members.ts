@@ -2,7 +2,7 @@ import { ethers } from 'ethers';
 import { loadClient, output, type CommonFlags } from './util.js';
 
 export async function membersList(appId: number, flags: CommonFlags) {
-  const client = loadClient(flags, false);
+  const client = await loadClient(flags, false);
   const json = flags.json ?? false;
 
   const raw = await client.getApplicationMembers(appId);
@@ -36,7 +36,7 @@ export async function membersList(appId: number, flags: CommonFlags) {
 }
 
 export async function memberInfo(appId: number, address: string, flags: CommonFlags) {
-  const client = loadClient(flags, false);
+  const client = await loadClient(flags, false);
   const json = flags.json ?? false;
 
   const m = await client.getMember(appId, address);
@@ -63,7 +63,7 @@ export async function memberAdd(
   roles: number,
   flags: CommonFlags
 ) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Adding member ${address} to app ${appId}...`);
@@ -80,7 +80,7 @@ export async function memberAdd(
 }
 
 export async function memberRemove(appId: number, address: string, flags: CommonFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Removing member ${address} from app ${appId}...`);
@@ -97,7 +97,7 @@ export async function memberRemove(appId: number, address: string, flags: Common
 }
 
 export async function memberRoles(appId: number, address: string, roles: number, flags: CommonFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Updating roles for ${address} in app ${appId}...`);

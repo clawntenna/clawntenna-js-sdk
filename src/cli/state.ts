@@ -3,10 +3,10 @@ import { join } from 'path';
 import { CONFIG_DIR, loadCredentials } from './init.js';
 import { output } from './util.js';
 
-const STATE_PATH = join(CONFIG_DIR, 'state.json');
+export const STATE_PATH = join(CONFIG_DIR, 'state.json');
 
-export function initState(address: string): 'created' | 'exists' {
-  if (existsSync(STATE_PATH)) {
+export function initState(address: string, force = false): 'created' | 'exists' {
+  if (!force && existsSync(STATE_PATH)) {
     return 'exists';
   }
 
@@ -20,7 +20,7 @@ export function initState(address: string): 'created' | 'exists' {
       startedAt: now,
       lastScanAt: now,
       mode: 'active',
-      skillVersion: '0.12.9',
+      skillVersion: '0.13.0',
       lastSkillCheck: now,
     },
 
@@ -86,8 +86,8 @@ export function initState(address: string): 'created' | 'exists' {
   return 'created';
 }
 
-export function stateInit(json: boolean): void {
-  const creds = loadCredentials();
+export async function stateInit(json: boolean): Promise<void> {
+  const creds = await loadCredentials(json);
   const address = creds?.wallet?.address ?? '';
   const status = initState(address);
 

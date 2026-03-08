@@ -7,7 +7,7 @@ export async function schemaCreate(
   body: string,
   flags: CommonFlags
 ) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Creating schema "${name}" in app ${appId}...`);
@@ -39,7 +39,7 @@ export async function schemaCreate(
 }
 
 export async function schemaInfo(schemaId: number, flags: CommonFlags) {
-  const client = loadClient(flags, false);
+  const client = await loadClient(flags, false);
   const json = flags.json ?? false;
 
   const s = await client.getSchema(schemaId);
@@ -58,7 +58,7 @@ export async function schemaInfo(schemaId: number, flags: CommonFlags) {
 }
 
 export async function schemaList(appId: number, flags: CommonFlags) {
-  const client = loadClient(flags, false);
+  const client = await loadClient(flags, false);
   const json = flags.json ?? false;
 
   const schemas = await client.getApplicationSchemas(appId);
@@ -79,7 +79,7 @@ export async function schemaList(appId: number, flags: CommonFlags) {
 }
 
 export async function schemaBind(topicId: number, schemaId: number, version: number, flags: CommonFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Binding schema #${schemaId} v${version} to topic ${topicId}...`);
@@ -96,7 +96,7 @@ export async function schemaBind(topicId: number, schemaId: number, version: num
 }
 
 export async function schemaUnbind(topicId: number, flags: CommonFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Clearing schema from topic ${topicId}...`);
@@ -113,7 +113,7 @@ export async function schemaUnbind(topicId: number, flags: CommonFlags) {
 }
 
 export async function schemaTopic(topicId: number, flags: CommonFlags) {
-  const client = loadClient(flags, false);
+  const client = await loadClient(flags, false);
   const json = flags.json ?? false;
 
   const binding = await client.getTopicSchema(topicId);
@@ -133,7 +133,7 @@ export async function schemaTopic(topicId: number, flags: CommonFlags) {
 }
 
 export async function schemaVersion(schemaId: number, version: number, flags: CommonFlags) {
-  const client = loadClient(flags, false);
+  const client = await loadClient(flags, false);
   const json = flags.json ?? false;
 
   const body = await client.getSchemaBody(schemaId, version);
@@ -146,7 +146,7 @@ export async function schemaVersion(schemaId: number, version: number, flags: Co
 }
 
 export async function schemaPublish(schemaId: number, body: string, flags: CommonFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Publishing new version for schema #${schemaId}...`);

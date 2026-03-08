@@ -1,11 +1,9 @@
-import { loadClient, output, outputError, type CommonFlags } from './util.js';
-import { loadCredentials } from './init.js';
-import { chainIdForCredentials } from './util.js';
+import { loadClient, output, outputError, loadPrivateTopicSecrets, type CommonFlags } from './util.js';
 
 const STATUS_LABELS = ['Pending', 'Released', 'Refunded'] as const;
 
 export async function escrowEnable(topicId: number, timeout: number, flags: CommonFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Enabling escrow for topic ${topicId} (timeout: ${timeout}s)...`);
@@ -22,7 +20,7 @@ export async function escrowEnable(topicId: number, timeout: number, flags: Comm
 }
 
 export async function escrowDisable(topicId: number, flags: CommonFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Disabling escrow for topic ${topicId}...`);
@@ -39,7 +37,7 @@ export async function escrowDisable(topicId: number, flags: CommonFlags) {
 }
 
 export async function escrowStatus(topicId: number, flags: CommonFlags) {
-  const client = loadClient(flags, false);
+  const client = await loadClient(flags, false);
   const json = flags.json ?? false;
 
   const config = await client.getEscrowConfig(topicId);
@@ -54,7 +52,7 @@ export async function escrowStatus(topicId: number, flags: CommonFlags) {
 }
 
 export async function escrowDeposits(topicId: number, flags: CommonFlags) {
-  const client = loadClient(flags, false);
+  const client = await loadClient(flags, false);
   const json = flags.json ?? false;
 
   const ids = await client.getPendingDeposits(topicId);
@@ -74,7 +72,7 @@ export async function escrowDeposits(topicId: number, flags: CommonFlags) {
 }
 
 export async function escrowDeposit(depositId: number, flags: CommonFlags) {
-  const client = loadClient(flags, false);
+  const client = await loadClient(flags, false);
   const json = flags.json ?? false;
 
   const d = await client.getDeposit(depositId);
@@ -108,7 +106,7 @@ export async function escrowDeposit(depositId: number, flags: CommonFlags) {
 }
 
 export async function escrowRefund(depositId: number, flags: CommonFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Claiming refund for deposit #${depositId}...`);
@@ -125,7 +123,7 @@ export async function escrowRefund(depositId: number, flags: CommonFlags) {
 }
 
 export async function escrowRefundBatch(depositIds: number[], flags: CommonFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Claiming refunds for ${depositIds.length} deposits...`);
@@ -142,7 +140,7 @@ export async function escrowRefundBatch(depositIds: number[], flags: CommonFlags
 }
 
 export async function escrowRespond(topicId: number, depositIds: number[], payload: string, flags: CommonFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Responding to deposit(s) [${depositIds.join(', ')}] on topic #${topicId}...`);
@@ -160,7 +158,7 @@ export async function escrowRespond(topicId: number, depositIds: number[], paylo
 }
 
 export async function escrowRelease(depositId: number, messageRef: number, flags: CommonFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Releasing deposit #${depositId}${messageRef ? ` (ref: ${messageRef})` : ''}...`);
@@ -177,7 +175,7 @@ export async function escrowRelease(depositId: number, messageRef: number, flags
 }
 
 export async function escrowReleaseBatch(depositIds: number[], flags: CommonFlags) {
-  const client = loadClient(flags);
+  const client = await loadClient(flags);
   const json = flags.json ?? false;
 
   if (!json) console.log(`Releasing ${depositIds.length} deposits...`);
@@ -194,27 +192,10 @@ export async function escrowReleaseBatch(depositIds: number[], flags: CommonFlag
 }
 
 export async function escrowInbox(topicId: number, flags: CommonFlags) {
-  const client = loadClient(flags, false);
+  const client = await loadClient(flags, false);
   const json = flags.json ?? false;
 
-  // Load ECDH keys for decryption if available
-  const creds = loadCredentials();
-  if (creds) {
-    const chainKey = chainIdForCredentials(flags.chain);
-    const ecdhKey = creds.chains?.[chainKey]?.ecdh?.privateKey;
-    if (ecdhKey) {
-      client.loadECDHKeypair(ecdhKey);
-      // Load topic keys from credentials
-      const apps = creds.chains?.[chainKey]?.apps;
-      if (apps) {
-        for (const app of Object.values(apps)) {
-          for (const [tId, key] of Object.entries(app.topicKeys || {})) {
-            client.setTopicKey(Number(tId), Buffer.from(key, 'hex'));
-          }
-        }
-      }
-    }
-  }
+  await loadPrivateTopicSecrets(client, flags, { loadTopicKeys: true });
 
   if (!json) console.log(`Loading inbox for topic #${topicId}...`);
 
@@ -270,7 +251,7 @@ export async function escrowInbox(topicId: number, flags: CommonFlags) {
 }
 
 export async function escrowStats(address: string, flags: CommonFlags) {
-  const client = loadClient(flags, false);
+  const client = await loadClient(flags, false);
   const json = flags.json ?? false;
 
   const cred = await client.getWalletCredibility(address);
