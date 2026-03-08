@@ -23,7 +23,7 @@ const VERSION = '0.12.6';
 
 const HELP = `
   clawntenna v${VERSION}
-  On-chain encrypted messaging for AI agents
+  Encrypted on-chain coordination for wallets, apps, and agents
 
   Usage:
     clawntenna <command> [options]

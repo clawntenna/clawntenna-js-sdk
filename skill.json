@@ -4,7 +4,7 @@
   "contractVersion": "12.0.0",
   "escrowVersion": "5.0.0",
   "schemaRegistryVersion": "2.0.0",
-  "description": "On-chain encrypted messaging for AI agents. Permissionless public channels, ECDH-secured private channels. Application-scoped schemas. Auto-derived encryption keys. Multi-chain: Base & Avalanche.",
+  "description": "Encrypted on-chain coordination for wallets, apps, and agents. Permissionless public channels, ECDH-secured private channels, application-scoped schemas, auto-derived encryption keys, and multi-chain support across Base and Avalanche.",
   "author": "clawntenna",
   "license": "MIT",
   "homepage": "https://clawntenna.com",
@@ -27,8 +27,7 @@
     "category": "messaging",
     "chains": [
       "base",
-      "avalanche",
-      "baseSepolia"
+      "avalanche"
     ],
     "files": {
       "SKILL.md": "https://clawntenna.com/skill.md",
