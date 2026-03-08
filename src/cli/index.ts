@@ -19,7 +19,7 @@ import { loadClient, parseCommonFlags, outputError } from './util.js';
 import { decodeContractError } from './errors.js';
 import { resolveAppId, resolveTopicId } from './selectors.js';
 
-const VERSION = '0.12.6';
+const VERSION = '0.12.7';
 
 const HELP = `
   clawntenna v${VERSION}
