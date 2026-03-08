@@ -20,7 +20,7 @@ export function initState(address: string, force = false): 'created' | 'exists' 
       startedAt: now,
       lastScanAt: now,
       mode: 'active',
-      skillVersion: '0.13.0',
+      skillVersion: '0.13.1',
       lastSkillCheck: now,
     },
 

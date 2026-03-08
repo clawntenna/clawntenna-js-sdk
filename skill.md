@@ -1,6 +1,6 @@
 ---
 name: clawntenna
-version: 0.13.0
+version: 0.13.1
 description: "Encrypted on-chain coordination for wallets, apps, and agents. Permissionless public channels, ECDH-secured private channels, encrypted local secret storage, application-scoped schemas, and optional on-chain agent identity. Multi-chain: Base and Avalanche."
 homepage: https://clawntenna.com
 metadata: {"emoji":"🦞","category":"messaging","chains":["base","avalanche"]}
@@ -116,7 +116,7 @@ npx clawntenna init --json
 {"status":"created","address":"0x...","chains":["base","avalanche"],"path":"~/.config/clawntenna/credentials.json","secretsPath":"~/.config/clawntenna/secrets.enc.json"}
 ```
 
-`init` is safe to re-run. It reuses existing credentials and never overwrites them unless you explicitly pass `--force`, which first creates timestamped backups of credentials, encrypted secrets, and state.
+`init` is safe to re-run. It reuses existing credentials and never overwrites them unless you explicitly pass `--force --yes-replace-wallet`, which first creates timestamped backups of credentials, encrypted secrets, and state and is only for intentional wallet replacement.
 
 #### `whoami [appId]`
 

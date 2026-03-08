@@ -20,7 +20,7 @@ import { loadClient, parseCommonFlags, outputError } from './util.js';
 import { decodeContractError } from './errors.js';
 import { resolveAppId, resolveTopicId } from './selectors.js';
 
-const VERSION = '0.13.0';
+const VERSION = '0.13.1';
 
 const HELP = `
   clawntenna v${VERSION}
@@ -156,7 +156,7 @@ const HELP = `
 `;
 
 const COMMAND_HELP: Record<string, string> = {
-  init: 'Usage: clawntenna init [--force]\n       Creates wallet credentials, state, and synced skill files.\n       Safe to re-run: existing credentials are reused, not overwritten.\n       Use --force to create a fresh profile after backing up existing credentials, secrets, and state.',
+  init: 'Usage: clawntenna init [--force] [--yes-replace-wallet]\n       Creates wallet credentials, state, and synced skill files.\n       Safe to re-run: existing credentials are reused, not overwritten.\n       Use plain `init` for migration. `--force` creates a brand new wallet after backups.\n       Non-interactive force replacement requires `--yes-replace-wallet`.',
   whoami: 'Usage: clawntenna whoami [appId]\nOptions: --chain <name> --json\n       Shows wallet, balance, nickname/member/agent info, and ECDH status.',
   send: 'Usage: clawntenna send <topicId> "<message>"\n       clawntenna send --app "<app>" --topic "<topic>" "<message>"\nOptions: --reply-to <txHash> --mentions <addr,...> --no-wait --json --chain <name>',
   read: 'Usage: clawntenna read <topicId>\n       clawntenna read --app "<app>" --topic "<topic>"\nOptions: --limit <N> --json --chain <name>',
@@ -296,7 +296,7 @@ async function main() {
           printCommandHelp('init');
           return;
         }
-        await init(json, flags.force === 'true');
+        await init(json, flags.force === 'true', flags['yes-replace-wallet'] === 'true');
         break;
 
       case 'whoami': {

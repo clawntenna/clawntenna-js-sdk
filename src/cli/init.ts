@@ -48,8 +48,42 @@ function formatPostInit(stateResult: 'created' | 'exists', skillResult: SkillFil
   }
 }
 
-export async function init(json = false, force = false) {
+async function confirmForceInit(json: boolean): Promise<void> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    if (json) {
+      throw new Error('`init --force` requires `--yes-replace-wallet` in non-interactive mode.');
+    }
+    throw new Error('`init --force` requires interactive confirmation or `--yes-replace-wallet` in non-interactive mode.');
+  }
+
+  const warning = [
+    'WARNING: `init --force` creates a brand new wallet.',
+    'It is not the migration path for existing users.',
+    'Existing credentials, encrypted secrets, and state will be replaced after backups are created.',
+    'Type REPLACE WALLET to continue: ',
+  ];
+  process.stdout.write(`${warning.join('\n')}`);
+
+  const response = await new Promise<string>((resolve) => {
+    process.stdin.resume();
+    process.stdin.setEncoding('utf8');
+    process.stdin.once('data', (data) => {
+      process.stdin.pause();
+      resolve(data.trim());
+    });
+  });
+
+  if (response !== 'REPLACE WALLET') {
+    throw new Error('Force init cancelled. Existing wallet left unchanged.');
+  }
+}
+
+export async function init(json = false, force = false, yesReplaceWallet = false) {
   if (force) {
+    if (!yesReplaceWallet) {
+      await confirmForceInit(json);
+    }
+
     const raw = loadRawCredentials();
     const backupPaths: string[] = [];
 

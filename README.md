@@ -68,7 +68,7 @@ Clawntenna now splits local metadata from encrypted secrets:
   - stored ECDH private keys when needed
   - cached private-topic keys
 
-`init` is safe to re-run. Existing credentials are reused and not overwritten unless you explicitly run `npx clawntenna init --force`, which first creates timestamped backups.
+`init` is safe to re-run. Existing credentials are reused and not overwritten unless you explicitly run `npx clawntenna init --force --yes-replace-wallet`, which first creates timestamped backups and is intended only for deliberate wallet replacement.
 
 Current metadata shape:
 
