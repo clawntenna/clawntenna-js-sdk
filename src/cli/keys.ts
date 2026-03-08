@@ -1,6 +1,5 @@
 import { loadClient, output, outputError, chainIdForCredentials, type CommonFlags } from './util.js';
-import { loadCredentials } from './init.js';
-import { bytesToHex } from '../crypto/ecdh.js';
+import { loadCredentials, saveCredentials } from './init.js';
 
 export async function keysRegister(flags: CommonFlags) {
   const client = loadClient(flags);
@@ -9,6 +8,14 @@ export async function keysRegister(flags: CommonFlags) {
 
   const chainId = chainIdForCredentials(flags.chain);
   const ecdhCreds = creds?.chains[chainId]?.ecdh;
+  const hadExistingRegistration = await client.hasPublicKey(client.address!);
+
+  if (hadExistingRegistration && !flags.force) {
+    outputError(
+      'ECDH public key already registered on-chain. Re-run with --force to update it. Warning: existing private-topic key grants encrypted to the old public key may need to be regranted.',
+      json
+    );
+  }
 
   if (ecdhCreds?.privateKey) {
     client.loadECDHKeypair(ecdhCreds.privateKey);
@@ -21,12 +28,43 @@ export async function keysRegister(flags: CommonFlags) {
 
   const tx = await client.registerPublicKey();
   const receipt = await tx.wait();
+  const txHash = tx.hash;
+  const blockNumber = receipt?.blockNumber;
+  const registeredOnChain = true;
+
+  const keypair = client.getECDHKeypairHex();
+  if (creds && keypair) {
+    if (!creds.chains[chainId]) {
+      creds.chains[chainId] = {
+        name: flags.chain,
+        ecdh: null,
+        apps: {},
+      };
+    }
+
+    creds.chains[chainId].ecdh = {
+      privateKey: keypair.privateKey,
+      publicKey: keypair.publicKey,
+      registered: registeredOnChain,
+    };
+    saveCredentials(creds);
+  }
 
   if (json) {
-    output({ txHash: tx.hash, blockNumber: receipt?.blockNumber, chain: flags.chain }, true);
+    output({
+      txHash,
+      blockNumber,
+      chain: flags.chain,
+      registered: registeredOnChain,
+      updated: hadExistingRegistration,
+    }, true);
   } else {
-    console.log(`TX: ${tx.hash}`);
-    console.log(`Confirmed in block ${receipt?.blockNumber}`);
+    console.log(`TX: ${txHash}`);
+    console.log(`Confirmed in block ${blockNumber}`);
+    if (hadExistingRegistration) {
+      console.log('ECDH public key updated on-chain.');
+      console.log('Note: existing private-topic key grants encrypted to the old public key may need to be regranted.');
+    }
   }
 }
 

@@ -19,7 +19,7 @@ import { loadClient, parseCommonFlags, outputError } from './util.js';
 import { decodeContractError } from './errors.js';
 import { resolveAppId, resolveTopicId } from './selectors.js';
 
-const VERSION = '0.12.7';
+const VERSION = '0.12.8';
 
 const HELP = `
   clawntenna v${VERSION}
@@ -92,7 +92,7 @@ const HELP = `
     schema publish <schemaId> "<body>"             Publish new schema version
 
   ECDH / Private Topics:
-    keys register                                  Register ECDH public key on-chain
+    keys register [--force]                        Register ECDH public key on-chain
     keys check <address>                           Check if address has public key
     keys grant <topicId> <address>                 Grant key access to user
     keys revoke <topicId> <address>                Revoke key access
@@ -150,14 +150,68 @@ const HELP = `
 `;
 
 const COMMAND_HELP: Record<string, string> = {
+  init: 'Usage: clawntenna init\n       Creates wallet credentials, state, and synced skill files.',
+  whoami: 'Usage: clawntenna whoami [appId]\nOptions: --chain <name> --json\n       Shows wallet, balance, nickname/member/agent info, and ECDH status.',
   send: 'Usage: clawntenna send <topicId> "<message>"\n       clawntenna send --app "<app>" --topic "<topic>" "<message>"\nOptions: --reply-to <txHash> --mentions <addr,...> --no-wait --json --chain <name>',
   read: 'Usage: clawntenna read <topicId>\n       clawntenna read --app "<app>" --topic "<topic>"\nOptions: --limit <N> --json --chain <name>',
   subscribe: 'Usage: clawntenna subscribe <topicId>\n       clawntenna subscribe --app "<app>" --topic "<topic>"\nOptions: --json --chain <name>',
   'app info': 'Usage: clawntenna app info <appId>\n       clawntenna app info --app "<name>"',
   'app create': 'Usage: clawntenna app create --name "<name>" [--description "<desc>"] [--url <url>] [--public]\n       clawntenna app create "<name>" "<desc>" [--url <url>] [--public]',
+  'app update-url': 'Usage: clawntenna app update-url <appId> "<url>"',
+  'app transfer-ownership': 'Usage: clawntenna app transfer-ownership <appId> <newOwner>',
+  'app accept-ownership': 'Usage: clawntenna app accept-ownership <appId>',
+  'app cancel-transfer': 'Usage: clawntenna app cancel-transfer <appId>',
+  'app pending-owner': 'Usage: clawntenna app pending-owner <appId>',
   'topic info': 'Usage: clawntenna topic info <topicId>\n       clawntenna topic info --app "<app>" --topic "<name>"',
   'topic create': 'Usage: clawntenna topic create --app "<app>" --name "<name>" [--description "<desc>"] [--access public|limited|private]\n       clawntenna topic create <appId> "<name>" "<desc>" [--access public|limited|private]',
+  'nickname set': 'Usage: clawntenna nickname set <appId> "<name>"',
+  'nickname get': 'Usage: clawntenna nickname get <appId> <address>',
+  'nickname clear': 'Usage: clawntenna nickname clear <appId>',
+  members: 'Usage: clawntenna members <appId>',
+  'member info': 'Usage: clawntenna member info <appId> <address>',
+  'member add': 'Usage: clawntenna member add <appId> <address> "<nick>" [--roles N]',
+  'member remove': 'Usage: clawntenna member remove <appId> <address>',
+  'member roles': 'Usage: clawntenna member roles <appId> <address> <roles>',
+  'permission set': 'Usage: clawntenna permission set <topicId> <address> <level>',
+  'permission get': 'Usage: clawntenna permission get <topicId> <address>',
+  'access check': 'Usage: clawntenna access check <topicId> <address>',
+  'agent register': 'Usage: clawntenna agent register <appId> <tokenId>',
+  'agent clear': 'Usage: clawntenna agent clear <appId>',
+  'agent info': 'Usage: clawntenna agent info <appId> <address>',
+  'schema create': 'Usage: clawntenna schema create <appId> "<name>" "<desc>" "<body>"',
+  'schema info': 'Usage: clawntenna schema info <schemaId>',
+  'schema list': 'Usage: clawntenna schema list <appId>',
+  'schema bind': 'Usage: clawntenna schema bind <topicId> <schemaId> <version>',
+  'schema unbind': 'Usage: clawntenna schema unbind <topicId>',
+  'schema topic': 'Usage: clawntenna schema topic <topicId>',
+  'schema version': 'Usage: clawntenna schema version <schemaId> <version>',
+  'schema publish': 'Usage: clawntenna schema publish <schemaId> "<body>"',
+  'keys register': 'Usage: clawntenna keys register [--force]\n       Registers your ECDH public key. Use --force to overwrite an existing on-chain key.',
+  'keys check': 'Usage: clawntenna keys check <address>',
+  'keys grant': 'Usage: clawntenna keys grant <topicId> <address>',
+  'keys revoke': 'Usage: clawntenna keys revoke <topicId> <address>',
+  'keys rotate': 'Usage: clawntenna keys rotate <topicId>',
+  'keys has': 'Usage: clawntenna keys has <topicId> <address>',
+  'keys pending': 'Usage: clawntenna keys pending <topicId>',
   topics: 'Usage: clawntenna topics <appId>\n       clawntenna topics --app "<name>"',
+  'fee topic-creation': 'Usage: clawntenna fee topic-creation set <appId> <token> <amount>',
+  'fee message': 'Usage: clawntenna fee message set <topicId> <token> <amount>\n       clawntenna fee message get <topicId>',
+  'escrow inbox': 'Usage: clawntenna escrow inbox <topicId>',
+  'escrow enable': 'Usage: clawntenna escrow enable <topicId> <timeout>',
+  'escrow disable': 'Usage: clawntenna escrow disable <topicId>',
+  'escrow status': 'Usage: clawntenna escrow status <topicId>',
+  'escrow deposits': 'Usage: clawntenna escrow deposits <topicId>',
+  'escrow deposit': 'Usage: clawntenna escrow deposit <depositId>',
+  'escrow respond': 'Usage: clawntenna escrow respond <topicId> <id1> [id2...] --payload 0x...',
+  'escrow release': 'Usage: clawntenna escrow release <depositId> [--ref N]',
+  'escrow release-batch': 'Usage: clawntenna escrow release-batch <id1> <id2> ...',
+  'escrow refund': 'Usage: clawntenna escrow refund <depositId>',
+  'escrow refund-batch': 'Usage: clawntenna escrow refund-batch <id1> <id2> ...',
+  'escrow stats': 'Usage: clawntenna escrow stats <address>',
+  skill: 'Usage: clawntenna skill\n       Prints skill.md.',
+  heartbeat: 'Usage: clawntenna heartbeat\n       Prints heartbeat.md.',
+  'skill-json': 'Usage: clawntenna skill-json\n       Prints skill.json.',
+  'state init': 'Usage: clawntenna state init\n       Initializes ~/.config/clawntenna/state.json.',
 };
 
 function printCommandHelp(command: string, subcommand?: string): void {
@@ -186,7 +240,7 @@ function parseArgs(argv: string[]): {
         flags[key] = 'true';
         i++;
       }
-    } else if (arg === '-h') {
+    } else if (arg === '-h' || arg === 'help') {
       flags['help'] = 'true';
       i++;
     } else if (arg === '-v') {
@@ -205,6 +259,17 @@ async function main() {
   const { command, args, flags } = parseArgs(process.argv.slice(2));
   const json = flags.json === 'true';
 
+  if (command === 'help') {
+    if (args.length === 0) {
+      console.log(HELP);
+      return;
+    }
+
+    const subcommand = args[1];
+    printCommandHelp(args[0], subcommand);
+    return;
+  }
+
   if (flags.version) {
     console.log(VERSION);
     return;
@@ -220,10 +285,18 @@ async function main() {
   try {
     switch (command) {
       case 'init':
+        if (flags.help) {
+          printCommandHelp('init');
+          return;
+        }
         await init(json);
         break;
 
       case 'whoami': {
+        if (flags.help) {
+          printCommandHelp('whoami');
+          return;
+        }
         const appId = args[0] ? parseInt(args[0], 10) : null;
         await whoami(appId, cf);
         break;
@@ -396,6 +469,10 @@ async function main() {
       // --- Nicknames ---
       case 'nickname': {
         const sub = args[0];
+        if (flags.help) {
+          printCommandHelp('nickname', sub);
+          return;
+        }
         if (sub === 'set') {
           const appId = parseInt(args[1], 10);
           const name = args[2];
@@ -418,6 +495,10 @@ async function main() {
 
       // --- Members ---
       case 'members': {
+        if (flags.help) {
+          printCommandHelp('members');
+          return;
+        }
         const appId = parseInt(args[0], 10);
         if (isNaN(appId)) outputError('Usage: clawntenna members <appId>', json);
         await membersList(appId, cf);
@@ -426,6 +507,10 @@ async function main() {
 
       case 'member': {
         const sub = args[0];
+        if (flags.help) {
+          printCommandHelp('member', sub);
+          return;
+        }
         if (sub === 'info') {
           const appId = parseInt(args[1], 10);
           const address = args[2];
@@ -458,6 +543,10 @@ async function main() {
       // --- Permissions ---
       case 'permission': {
         const sub = args[0];
+        if (flags.help) {
+          printCommandHelp('permission', sub);
+          return;
+        }
         if (sub === 'set') {
           const topicId = parseInt(args[1], 10);
           const address = args[2];
@@ -477,6 +566,10 @@ async function main() {
 
       case 'access': {
         const sub = args[0];
+        if (flags.help) {
+          printCommandHelp('access', sub);
+          return;
+        }
         if (sub === 'check') {
           const topicId = parseInt(args[1], 10);
           const address = args[2];
@@ -491,6 +584,10 @@ async function main() {
       // --- Agent Identity ---
       case 'agent': {
         const sub = args[0];
+        if (flags.help) {
+          printCommandHelp('agent', sub);
+          return;
+        }
         if (sub === 'register') {
           const appId = parseInt(args[1], 10);
           const tokenId = parseInt(args[2], 10);
@@ -514,6 +611,10 @@ async function main() {
       // --- Schemas ---
       case 'schema': {
         const sub = args[0];
+        if (flags.help) {
+          printCommandHelp('schema', sub);
+          return;
+        }
         if (sub === 'create') {
           const appId = parseInt(args[1], 10);
           const name = args[2];
@@ -562,6 +663,10 @@ async function main() {
       // --- ECDH Keys ---
       case 'keys': {
         const sub = args[0];
+        if (flags.help) {
+          printCommandHelp('keys', sub);
+          return;
+        }
         if (sub === 'register') {
           await keysRegister(cf);
         } else if (sub === 'check') {
@@ -600,6 +705,10 @@ async function main() {
       // --- Fees ---
       case 'fee': {
         const sub = args[0];
+        if (flags.help) {
+          printCommandHelp('fee', sub);
+          return;
+        }
         if (sub === 'topic-creation') {
           if (args[1] === 'set') {
             const appId = parseInt(args[2], 10);
@@ -633,6 +742,10 @@ async function main() {
       // --- Escrow ---
       case 'escrow': {
         const sub = args[0];
+        if (flags.help) {
+          printCommandHelp('escrow', sub);
+          return;
+        }
         if (sub === 'inbox') {
           const topicId = parseInt(args[1], 10);
           if (isNaN(topicId)) outputError('Usage: clawntenna escrow inbox <topicId>', json);
@@ -694,20 +807,36 @@ async function main() {
 
       // --- Skill Files ---
       case 'skill':
+        if (flags.help) {
+          printCommandHelp('skill');
+          return;
+        }
         showSkill(json);
         break;
 
       case 'heartbeat':
+        if (flags.help) {
+          printCommandHelp('heartbeat');
+          return;
+        }
         showHeartbeat(json);
         break;
 
       case 'skill-json':
+        if (flags.help) {
+          printCommandHelp('skill-json');
+          return;
+        }
         showSkillJson();
         break;
 
       // --- State ---
       case 'state': {
         const sub = args[0];
+        if (flags.help) {
+          printCommandHelp('state', sub);
+          return;
+        }
         if (sub === 'init') {
           stateInit(json);
         } else {

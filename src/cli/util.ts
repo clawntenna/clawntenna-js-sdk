@@ -7,6 +7,7 @@ export interface CommonFlags {
   key?: string;
   rpc?: string;
   json?: boolean;
+  force?: boolean;
 }
 
 export function parseCommonFlags(flags: Record<string, string>): CommonFlags {
@@ -15,6 +16,7 @@ export function parseCommonFlags(flags: Record<string, string>): CommonFlags {
     key: flags.key,
     rpc: flags.rpc,
     json: flags.json === 'true',
+    force: flags.force === 'true',
   };
 }
 

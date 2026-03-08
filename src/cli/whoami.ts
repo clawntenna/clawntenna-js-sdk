@@ -33,11 +33,14 @@ export async function whoami(appId: number | null, flags: CommonFlags) {
   }
 
   const creds = loadCredentials();
-  if (creds) {
-    const chainId = chainIdForCredentials(flags.chain);
-    const chainCreds = creds.chains[chainId];
-    result.ecdhRegistered = chainCreds?.ecdh?.registered ?? false;
-  }
+  const chainId = chainIdForCredentials(flags.chain);
+  const chainCreds = creds?.chains[chainId];
+  const [ecdhRegistered, ecdhStored] = await Promise.all([
+    client.hasPublicKey(address).catch(() => false),
+    Promise.resolve(Boolean(chainCreds?.ecdh?.privateKey)),
+  ]);
+  result.ecdhRegistered = ecdhRegistered;
+  result.ecdhStored = ecdhStored;
 
   if (json) {
     output(result, true);
@@ -51,6 +54,8 @@ export async function whoami(appId: number | null, flags: CommonFlags) {
       console.log(`Member:   ${result.isMember}`);
       console.log(`Agent:    ${result.hasAgentIdentity}${result.agentTokenId ? ` (token #${result.agentTokenId})` : ''}`);
     }
-    console.log(`ECDH:     ${result.ecdhRegistered ? 'registered' : 'not registered'}`);
+    const ecdhStatus = result.ecdhRegistered ? 'registered on-chain' : 'not registered';
+    const ecdhStorage = result.ecdhStored ? 'stored locally' : 'not stored locally';
+    console.log(`ECDH:     ${ecdhStatus} (${ecdhStorage})`);
   }
 }

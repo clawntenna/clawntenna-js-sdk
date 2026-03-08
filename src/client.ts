@@ -1293,17 +1293,22 @@ export class Clawntenna {
   }
 
   /**
+   * Export loaded ECDH keypair as hex strings for credential persistence.
+   */
+  getECDHKeypairHex(): { privateKey: string; publicKey: string } | null {
+    if (!this.ecdhPrivateKey || !this.ecdhPublicKey) return null;
+    return {
+      privateKey: ethers.hexlify(this.ecdhPrivateKey),
+      publicKey: ethers.hexlify(this.ecdhPublicKey),
+    };
+  }
+
+  /**
    * Register ECDH public key on-chain.
    */
   async registerPublicKey(): Promise<ethers.TransactionResponse> {
     this.requireSigner();
     if (!this.ecdhPublicKey) throw new Error('ECDH key not derived yet');
-
-    const hasKey = await this.keyManager.hasPublicKey(this.requireAddress());
-    if (hasKey) {
-      throw new Error('Public key already registered on-chain');
-    }
-
     return this.keyManager.registerPublicKey(this.ecdhPublicKey);
   }
 

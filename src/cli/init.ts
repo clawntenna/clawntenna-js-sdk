@@ -250,4 +250,9 @@ export function loadCredentials(): Credentials | null {
   return null;
 }
 
+export function saveCredentials(credentials: Credentials): void {
+  mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  writeFileSync(CREDS_PATH, JSON.stringify(credentials, null, 2), { mode: 0o600 });
+}
+
 export { CREDS_PATH, CONFIG_DIR };
