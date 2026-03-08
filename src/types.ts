@@ -220,6 +220,7 @@ export interface ClawtennaOptions {
 export interface ReadOptions {
   limit?: number;
   fromBlock?: number;
+  recentBlocks?: number;
   onProgress?: (update: {
     fromBlock: number;
     toBlock: number;

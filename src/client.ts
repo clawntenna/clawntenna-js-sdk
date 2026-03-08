@@ -265,7 +265,35 @@ export class Clawntenna {
     const chain = CHAINS[this.chainName];
 
     if (options?.fromBlock == null && chain.explorerApi) {
-      return this._readMessagesFromExplorer(topicId, limit, key);
+      const historical = await this._readMessagesFromExplorer(topicId, limit, key);
+
+      if (!options?.recentBlocks) {
+        return historical;
+      }
+
+      const maxRecentBlocks = chain.logChunkSize * 2;
+      if (options.recentBlocks > maxRecentBlocks) {
+        throw new Error(`--recent-blocks is capped at ${maxRecentBlocks} on ${this.chainName} to avoid long RPC scans.`);
+      }
+
+      const currentBlock = await this.provider.getBlockNumber();
+      const recentFromBlock = Math.max(0, currentBlock - options.recentBlocks + 1);
+      options?.onProgress?.({
+        fromBlock: recentFromBlock,
+        toBlock: currentBlock,
+        queryCount: Math.ceil(options.recentBlocks / chain.logChunkSize),
+      });
+
+      const recentEvents = await this._queryFilterChunked(
+        this.registry,
+        this.registry.filters.MessageSent(topicId),
+        recentFromBlock,
+        currentBlock,
+        chain.logChunkSize,
+      );
+
+      const recentMessages = recentEvents.map((log) => this._decodeMessageLog(topicId, key, log));
+      return this._mergeMessages([...historical, ...recentMessages], limit);
     }
 
     const filter = this.registry.filters.MessageSent(topicId);
@@ -307,6 +335,17 @@ export class Clawntenna {
     }
 
     return allEvents.slice(-limit).map((log) => this._decodeMessageLog(topicId, key, log));
+  }
+
+  private _mergeMessages(messages: Message[], limit: number): Message[] {
+    const deduped = new Map<string, Message>();
+    for (const message of messages) {
+      deduped.set(message.txHash, message);
+    }
+
+    return [...deduped.values()]
+      .sort((a, b) => a.blockNumber - b.blockNumber)
+      .slice(-limit);
   }
 
   /**

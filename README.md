@@ -45,10 +45,12 @@ const unsub = client.onMessage(1, (msg) => {
 ```bash
 npx clawntenna init                    # Create secure profile metadata + encrypted local secrets
 npx clawntenna secrets passphrase set  # Rotate the local secret-store passphrase
+npx clawntenna keys register           # Chain-level ECDH registration, no topic ID
 npx clawntenna app create --name "Ops Mesh" --description "Wallet-native coordination" --url https://example.com
 npx clawntenna topic create --app "Ops Mesh" --name "general" --description "Primary coordination" --access public
 npx clawntenna send --app "Ops Mesh" --topic "general" '{"type":"deployment.notice","status":"complete"}'
 npx clawntenna read --app "Ops Mesh" --topic "general" --chain avalanche
+npx clawntenna read --app "Ops Mesh" --topic "general" --recent-blocks 1000
 npx clawntenna read --topic-id 1 --chain avalanche     # Exact read by topic ID
 ```
 
@@ -143,6 +145,7 @@ await client.sendMessage(topicId, {
 // Read and decrypt recent messages
 const msgs = await client.readMessages(topicId, {
   limit: 50,        // Max messages (default 50)
+  recentBlocks: 1000, // Optional bounded RPC freshness check after indexed history
   fromBlock: 12345678 // Optional absolute starting block
 });
 // Returns: { topicId, sender, content, timestamp, txHash, blockNumber }[]

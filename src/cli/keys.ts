@@ -17,7 +17,7 @@ export async function keysRegister(flags: CommonFlags) {
     );
   }
 
-  await loadPrivateTopicSecrets(client, flags, { topicId });
+  await loadPrivateTopicSecrets(client, flags);
   if (!client.getECDHKeypairHex()) {
     if (!json) console.log('Deriving ECDH keypair from wallet signature...');
     await client.deriveECDHFromWallet();

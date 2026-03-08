@@ -2,6 +2,7 @@ import { loadClient, output, loadPrivateTopicSecrets, type CommonFlags } from '.
 
 interface ReadFlags extends CommonFlags {
   limit: number;
+  recentBlocks?: number;
 }
 
 export async function read(topicId: number, flags: ReadFlags) {
@@ -20,6 +21,7 @@ export async function read(topicId: number, flags: ReadFlags) {
 
   const messages = await client.readMessages(topicId, {
     limit: flags.limit,
+    recentBlocks: flags.recentBlocks,
     onProgress: json ? undefined : ({ fromBlock, toBlock, queryCount }) => {
       console.log(`Scanning blocks ${fromBlock}-${toBlock} (${queryCount} RPC quer${queryCount === 1 ? 'y' : 'ies'})...`);
     },
@@ -60,6 +62,9 @@ export async function read(topicId: number, flags: ReadFlags) {
 
   if (messages.length === 0) {
     console.log('No messages found.');
+    if (!flags.recentBlocks && client.supportsIndexedHistory()) {
+      console.log('Recent on-chain messages may not be indexed yet. Retry with --recent-blocks <n> for a bounded RPC check.');
+    }
     return;
   }
 

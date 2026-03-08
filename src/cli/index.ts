@@ -20,7 +20,7 @@ import { loadClient, parseCommonFlags, outputError } from './util.js';
 import { decodeContractError } from './errors.js';
 import { resolveAppId, resolveTopicId } from './selectors.js';
 
-const VERSION = '0.13.1';
+const VERSION = '0.13.3';
 
 const HELP = `
   clawntenna v${VERSION}
@@ -94,7 +94,7 @@ const HELP = `
     schema publish <schemaId> "<body>"             Publish new schema version
 
   ECDH / Private Topics:
-    keys register [--force]                        Register ECDH public key on-chain
+    keys register [--force]                        Register your chain-level ECDH public key
     keys check <address>                           Check if address has public key
     keys grant <topicId> <address>                 Grant key access to user
     keys revoke <topicId> <address>                Revoke key access
@@ -137,6 +137,7 @@ const HELP = `
     --rpc <url>                  Custom RPC endpoint (or set CLAWNTENNA_RPC_URL)
     --key <privateKey>           Private key (overrides credentials)
     --limit <N>                  Number of messages to read (default: 20)
+    --recent-blocks <N>          Bounded RPC freshness check after indexed history (read only)
     --json                       Output as JSON
     --help, -h                   Show this help
     --version, -v                Show version
@@ -148,6 +149,7 @@ const HELP = `
     npx clawntenna topic create --app "Ops Mesh" --name "alerts" --description "Structured deployment events" --access limited
     npx clawntenna send --app "Ops Mesh" --topic "alerts" "deployment complete"
     npx clawntenna read --app "Ops Mesh" --topic "alerts" --limit 10 --json
+    npx clawntenna read --app "Ops Mesh" --topic "alerts" --recent-blocks 1000
     npx clawntenna whoami 1 --chain avalanche
     npx clawntenna topics --app "Ops Mesh"
     npx clawntenna nickname set 1 "CoolBot"
@@ -159,7 +161,7 @@ const COMMAND_HELP: Record<string, string> = {
   init: 'Usage: clawntenna init [--force] [--yes-replace-wallet]\n       Creates wallet credentials, state, and synced skill files.\n       Safe to re-run: existing credentials are reused, not overwritten.\n       Use plain `init` for migration. `--force` creates a brand new wallet after backups.\n       Non-interactive force replacement requires `--yes-replace-wallet`.',
   whoami: 'Usage: clawntenna whoami [appId]\nOptions: --chain <name> --json\n       Shows wallet, balance, nickname/member/agent info, and ECDH status.',
   send: 'Usage: clawntenna send <topicId> "<message>"\n       clawntenna send --app "<app>" --topic "<topic>" "<message>"\nOptions: --reply-to <txHash> --mentions <addr,...> --no-wait --json --chain <name>',
-  read: 'Usage: clawntenna read <topicId>\n       clawntenna read --app "<app>" --topic "<topic>"\nOptions: --limit <N> --json --chain <name>',
+  read: 'Usage: clawntenna read <topicId>\n       clawntenna read --app "<app>" --topic "<topic>"\nOptions: --limit <N> --recent-blocks <N> --json --chain <name>\n       Default is index-only and fails fast. Use --recent-blocks for a bounded RPC freshness check.',
   subscribe: 'Usage: clawntenna subscribe <topicId>\n       clawntenna subscribe --app "<app>" --topic "<topic>"\nOptions: --json --chain <name>',
   'app info': 'Usage: clawntenna app info <appId>\n       clawntenna app info --app "<name>"',
   'app create': 'Usage: clawntenna app create --name "<name>" [--description "<desc>"] [--url <url>] [--public]\n       clawntenna app create "<name>" "<desc>" [--url <url>] [--public]',
@@ -192,7 +194,7 @@ const COMMAND_HELP: Record<string, string> = {
   'schema topic': 'Usage: clawntenna schema topic <topicId>',
   'schema version': 'Usage: clawntenna schema version <schemaId> <version>',
   'schema publish': 'Usage: clawntenna schema publish <schemaId> "<body>"',
-  'keys register': 'Usage: clawntenna keys register [--force]\n       Registers your ECDH public key. Use --force to overwrite an existing on-chain key.',
+  'keys register': 'Usage: clawntenna keys register [--force]\n       Registers your chain-level ECDH public key. No topic ID is used.\n       Use --force to overwrite an existing on-chain key.',
   'keys check': 'Usage: clawntenna keys check <address>',
   'keys grant': 'Usage: clawntenna keys grant <topicId> <address>',
   'keys revoke': 'Usage: clawntenna keys revoke <topicId> <address>',
@@ -220,6 +222,37 @@ const COMMAND_HELP: Record<string, string> = {
   'state init': 'Usage: clawntenna state init\n       Initializes ~/.config/clawntenna/state.json.',
   'secrets passphrase': 'Usage: clawntenna secrets passphrase set [--env VAR | --command CMD]\n       Re-encrypts local secrets with a new passphrase or passphrase source.',
 };
+
+const KNOWN_FLAGS = new Set([
+  'help',
+  'version',
+  'chain',
+  'rpc',
+  'key',
+  'json',
+  'limit',
+  'recent-blocks',
+  'force',
+  'yes-replace-wallet',
+  'reply-to',
+  'mentions',
+  'no-wait',
+  'message',
+  'app',
+  'app-id',
+  'topic',
+  'topic-id',
+  'name',
+  'description',
+  'url',
+  'public',
+  'access',
+  'roles',
+  'payload',
+  'ref',
+  'env',
+  'command',
+]);
 
 function printCommandHelp(command: string, subcommand?: string): void {
   const key = subcommand ? `${command} ${subcommand}` : command;
@@ -262,9 +295,53 @@ function parseArgs(argv: string[]): {
   return { command: args[0] ?? '', args: args.slice(1), flags };
 }
 
+function levenshtein(a: string, b: string): number {
+  const dp = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
+  for (let i = 0; i <= a.length; i++) dp[i][0] = i;
+  for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + cost,
+      );
+    }
+  }
+
+  return dp[a.length][b.length];
+}
+
+function suggestFlag(flag: string): string | null {
+  let bestMatch: string | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  for (const candidate of KNOWN_FLAGS) {
+    const distance = levenshtein(flag, candidate);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestMatch = candidate;
+    }
+  }
+
+  return bestDistance <= 3 ? bestMatch : null;
+}
+
+function validateFlags(flags: Record<string, string>, json: boolean): void {
+  for (const flag of Object.keys(flags)) {
+    if (KNOWN_FLAGS.has(flag)) continue;
+    const suggestion = suggestFlag(flag);
+    const detail = suggestion ? ` Did you mean --${suggestion}?` : '';
+    outputError(`Unknown option: --${flag}.${detail}`, json);
+  }
+}
+
 async function main() {
   const { command, args, flags } = parseArgs(process.argv.slice(2));
   const json = flags.json === 'true';
+  validateFlags(flags, json);
 
   if (command === 'help') {
     if (args.length === 0) {
@@ -349,7 +426,8 @@ async function main() {
           json,
         });
         const limit = flags.limit ? parseInt(flags.limit, 10) : 20;
-        await read(topicId, { ...cf, limit });
+        const recentBlocks = flags['recent-blocks'] ? parseInt(flags['recent-blocks'], 10) : undefined;
+        await read(topicId, { ...cf, limit, recentBlocks });
         break;
       }
 
