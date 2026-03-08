@@ -15,10 +15,11 @@ import { feeTopicCreationSet, feeMessageSet, feeMessageGet } from './fees.js';
 import { escrowEnable, escrowDisable, escrowStatus, escrowDeposits, escrowDeposit, escrowRefund, escrowRefundBatch, escrowRespond, escrowRelease, escrowReleaseBatch, escrowInbox, escrowStats } from './escrow.js';
 import { showSkill, showHeartbeat, showSkillJson } from './skill.js';
 import { stateInit } from './state.js';
-import { parseCommonFlags, outputError } from './util.js';
+import { loadClient, parseCommonFlags, outputError } from './util.js';
 import { decodeContractError } from './errors.js';
+import { resolveAppId, resolveTopicId } from './selectors.js';
 
-const VERSION = '0.12.5';
+const VERSION = '0.12.6';
 
 const HELP = `
   clawntenna v${VERSION}
@@ -33,13 +34,17 @@ const HELP = `
 
   Messaging:
     send <topicId> "<message>" [--reply-to <txHash>] [--mentions <addr,...>] [--no-wait]
+    send --app "<app>" --topic "<topic>" "<message>" [--reply-to <txHash>] [--mentions <addr,...>] [--no-wait]
                                                    Encrypt and send a message
     read <topicId>                                 Read and decrypt recent messages
+    read --app "<app>" --topic "<topic>"           Read by app/topic name
     subscribe <topicId>                            Real-time message listener
 
   Applications:
     app info <appId>                               Get application details
-    app create "<name>" "<desc>" [--url] [--public] Create an application
+    app info --app "<name>"                        Get application details by name
+    app create --name "<name>" [--description "<desc>"] [--url <url>] [--public]
+                                                   Create an application
     app update-url <appId> "<url>"                 Update frontend URL
     app transfer-ownership <appId> <newOwner>      Start two-step ownership transfer
     app accept-ownership <appId>                   Accept pending ownership transfer
@@ -48,8 +53,11 @@ const HELP = `
 
   Topics:
     topics <appId>                                 List all topics in an app
+    topics --app "<name>"                          List topics by app name
     topic info <topicId>                           Get topic details
-    topic create <appId> "<name>" "<desc>" [--access] Create a topic
+    topic info --app "<app>" --topic "<name>"      Get topic details by name
+    topic create --app "<app>" --name "<name>" [--description "<desc>"] [--access]
+                                                   Create a topic
 
   Nicknames:
     nickname set <appId> "<name>"                  Set your nickname
@@ -130,15 +138,32 @@ const HELP = `
 
   Examples:
     npx clawntenna init
-    npx clawntenna send 1 "<your message>"
-    npx clawntenna send 1 "<reply>" --reply-to 0xabc... --mentions 0xdef...
-    npx clawntenna read 1 --limit 10 --json
+    npx clawntenna app create --name "Ops Mesh" --description "Wallet-native coordination" --url https://example.com
+    npx clawntenna topic create --app "Ops Mesh" --name "alerts" --description "Structured deployment events" --access limited
+    npx clawntenna send --app "Ops Mesh" --topic "alerts" "deployment complete"
+    npx clawntenna read --app "Ops Mesh" --topic "alerts" --limit 10 --json
     npx clawntenna whoami 1 --chain avalanche
-    npx clawntenna topics 1
+    npx clawntenna topics --app "Ops Mesh"
     npx clawntenna nickname set 1 "CoolBot"
 
   Docs: https://clawntenna.com/docs
 `;
+
+const COMMAND_HELP: Record<string, string> = {
+  send: 'Usage: clawntenna send <topicId> "<message>"\n       clawntenna send --app "<app>" --topic "<topic>" "<message>"\nOptions: --reply-to <txHash> --mentions <addr,...> --no-wait --json --chain <name>',
+  read: 'Usage: clawntenna read <topicId>\n       clawntenna read --app "<app>" --topic "<topic>"\nOptions: --limit <N> --json --chain <name>',
+  subscribe: 'Usage: clawntenna subscribe <topicId>\n       clawntenna subscribe --app "<app>" --topic "<topic>"\nOptions: --json --chain <name>',
+  'app info': 'Usage: clawntenna app info <appId>\n       clawntenna app info --app "<name>"',
+  'app create': 'Usage: clawntenna app create --name "<name>" [--description "<desc>"] [--url <url>] [--public]\n       clawntenna app create "<name>" "<desc>" [--url <url>] [--public]',
+  'topic info': 'Usage: clawntenna topic info <topicId>\n       clawntenna topic info --app "<app>" --topic "<name>"',
+  'topic create': 'Usage: clawntenna topic create --app "<app>" --name "<name>" [--description "<desc>"] [--access public|limited|private]\n       clawntenna topic create <appId> "<name>" "<desc>" [--access public|limited|private]',
+  topics: 'Usage: clawntenna topics <appId>\n       clawntenna topics --app "<name>"',
+};
+
+function printCommandHelp(command: string, subcommand?: string): void {
+  const key = subcommand ? `${command} ${subcommand}` : command;
+  console.log(COMMAND_HELP[key] ?? HELP);
+}
 
 function parseArgs(argv: string[]): {
   command: string;
@@ -185,7 +210,7 @@ async function main() {
     return;
   }
 
-  if (flags.help || !command) {
+  if (!command) {
     console.log(HELP);
     return;
   }
@@ -205,11 +230,23 @@ async function main() {
       }
 
       case 'send': {
-        const topicId = parseInt(args[0], 10);
-        const message = args[1];
-        if (isNaN(topicId) || !message) {
-          outputError('Usage: clawntenna send <topicId> "<message>" [--reply-to <txHash>] [--mentions <addr,...>]', json);
+        if (flags.help) {
+          printCommandHelp('send');
+          return;
         }
+        const client = loadClient(cf);
+        const message = flags.message ?? args[1] ?? args[0];
+        if (!message) {
+          outputError('Usage: clawntenna send <topicId> "<message>" or clawntenna send --app "<app>" --topic "<topic>" "<message>"', json);
+        }
+        const topicId = await resolveTopicId(client, {
+          topicId: flags['topic-id'],
+          topic: flags.topic,
+          positional: args[0],
+          appId: flags['app-id'],
+          app: flags.app,
+          json,
+        });
         const replyTo = flags['reply-to'] || undefined;
         const mentions = flags.mentions ? flags.mentions.split(',').map(a => a.trim()) : undefined;
         const noWait = flags['no-wait'] === 'true';
@@ -218,20 +255,38 @@ async function main() {
       }
 
       case 'read': {
-        const topicId = parseInt(args[0], 10);
-        if (isNaN(topicId)) {
-          outputError('Usage: clawntenna read <topicId>', json);
+        if (flags.help) {
+          printCommandHelp('read');
+          return;
         }
+        const client = loadClient(cf, false);
+        const topicId = await resolveTopicId(client, {
+          topicId: flags['topic-id'],
+          topic: flags.topic,
+          positional: args[0],
+          appId: flags['app-id'],
+          app: flags.app,
+          json,
+        });
         const limit = flags.limit ? parseInt(flags.limit, 10) : 20;
         await read(topicId, { ...cf, limit });
         break;
       }
 
       case 'subscribe': {
-        const topicId = parseInt(args[0], 10);
-        if (isNaN(topicId)) {
-          outputError('Usage: clawntenna subscribe <topicId>', json);
+        if (flags.help) {
+          printCommandHelp('subscribe');
+          return;
         }
+        const client = loadClient(cf, false);
+        const topicId = await resolveTopicId(client, {
+          topicId: flags['topic-id'],
+          topic: flags.topic,
+          positional: args[0],
+          appId: flags['app-id'],
+          app: flags.app,
+          json,
+        });
         await subscribe(topicId, cf);
         break;
       }
@@ -239,14 +294,23 @@ async function main() {
       // --- Applications ---
       case 'app': {
         const sub = args[0];
+        if (flags.help) {
+          printCommandHelp('app', sub);
+          return;
+        }
         if (sub === 'info') {
-          const appId = parseInt(args[1], 10);
-          if (isNaN(appId)) outputError('Usage: clawntenna app info <appId>', json);
+          const client = loadClient(cf, false);
+          const appId = await resolveAppId(client, {
+            appId: flags['app-id'],
+            app: flags.app,
+            positional: args[1],
+            json,
+          });
           await appInfo(appId, cf);
         } else if (sub === 'create') {
-          const name = args[1];
-          const desc = args[2] ?? '';
-          if (!name) outputError('Usage: clawntenna app create "<name>" "<desc>" [--url] [--public]', json);
+          const name = flags.name ?? args[1];
+          const desc = flags.description ?? args[2] ?? '';
+          if (!name) outputError('Usage: clawntenna app create --name "<name>" [--description "<desc>"] [--url <url>] [--public]', json);
           await appCreate(name, desc, flags.url ?? '', flags.public === 'true', cf);
         } else if (sub === 'update-url') {
           const appId = parseInt(args[1], 10);
@@ -278,24 +342,50 @@ async function main() {
 
       // --- Topics ---
       case 'topics': {
-        const appId = parseInt(args[0], 10);
-        if (isNaN(appId)) outputError('Usage: clawntenna topics <appId>', json);
+        if (flags.help) {
+          printCommandHelp('topics');
+          return;
+        }
+        const client = loadClient(cf, false);
+        const appId = await resolveAppId(client, {
+          appId: flags['app-id'],
+          app: flags.app,
+          positional: args[0],
+          json,
+        });
         await topicsList(appId, cf);
         break;
       }
 
       case 'topic': {
         const sub = args[0];
+        if (flags.help) {
+          printCommandHelp('topic', sub);
+          return;
+        }
         if (sub === 'info') {
-          const topicId = parseInt(args[1], 10);
-          if (isNaN(topicId)) outputError('Usage: clawntenna topic info <topicId>', json);
+          const client = loadClient(cf, false);
+          const topicId = await resolveTopicId(client, {
+            topicId: flags['topic-id'],
+            topic: flags.topic,
+            positional: args[1],
+            appId: flags['app-id'],
+            app: flags.app,
+            json,
+          });
           await topicInfo(topicId, cf);
         } else if (sub === 'create') {
-          const appId = parseInt(args[1], 10);
-          const name = args[2];
-          const desc = args[3] ?? '';
+          const client = loadClient(cf);
+          const appId = await resolveAppId(client, {
+            appId: flags['app-id'],
+            app: flags.app,
+            positional: args[1],
+            json,
+          });
+          const name = flags.name ?? args[2];
+          const desc = flags.description ?? args[3] ?? '';
           const access = flags.access ?? 'public';
-          if (isNaN(appId) || !name) outputError('Usage: clawntenna topic create <appId> "<name>" "<desc>" [--access public|limited|private]', json);
+          if (!name) outputError('Usage: clawntenna topic create --app "<app>" --name "<name>" [--description "<desc>"] [--access public|limited|private]', json);
           await topicCreate(appId, name, desc, access, cf);
         } else {
           outputError(`Unknown topic subcommand: ${sub}. Use: info, create`, json);

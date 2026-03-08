@@ -19,6 +19,7 @@ export const ERROR_MAP: Record<string, string> = {
   '0x15b3521e': 'NicknameCooldownActive — wait before changing nickname again',
   '0xae0ca2dd': 'SchemaNotFound — schema ID does not exist',
   '0x03230700': 'AppNameTaken — schema name already used in this app',
+  '0x63ae6be0': 'TopicNameAmbiguous — multiple legacy topics share that name in this app; use --topic-id',
 };
 
 /**

@@ -12,6 +12,7 @@ export const REGISTRY_ABI = [
   'function getTopic(uint256 topicId) view returns (tuple(uint256 id, uint256 applicationId, string name, string description, address owner, address creator, uint64 createdAt, uint64 lastMessageAt, uint256 messageCount, uint8 accessLevel, bool active))',
   'function topicCount() view returns (uint256)',
   'function getApplicationTopics(uint256 appId) view returns (uint256[])',
+  'function getTopicIdByName(uint256 appId, string name) view returns (uint256)',
 
   // Members
   'function members(uint256 appId, address user) view returns (address account, string nickname, uint8 roles, uint64 joinedAt)',

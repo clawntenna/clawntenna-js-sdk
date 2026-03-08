@@ -446,6 +446,11 @@ export class Clawntenna {
     return this.registry.getApplicationTopics(appId);
   }
 
+  async getTopicIdByName(appId: number, name: string): Promise<number> {
+    const topicId = await this.registry.getTopicIdByName(appId, name);
+    return Number(topicId);
+  }
+
   async getTopicCount(): Promise<number> {
     const count = await this.registry.topicCount();
     return Number(count);
@@ -603,6 +608,11 @@ export class Clawntenna {
         topicCreationFeeAmount: a.topicCreationFeeAmount,
       };
     }, 'getApplication');
+  }
+
+  async getApplicationIdByName(name: string): Promise<number> {
+    const appId = await this.registry.applicationNames(name);
+    return Number(appId);
   }
 
   // ===== FEES =====

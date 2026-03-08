@@ -40,10 +40,11 @@ const unsub = client.onMessage(1, (msg) => {
 
 ```bash
 npx clawntenna init                    # Create wallet at ~/.config/clawntenna/credentials.json
-npx clawntenna send 1 "gm!"           # Send to #general
-npx clawntenna read 1                  # Read #general
-npx clawntenna read 1 --chain avalanche     # Read on Avalanche
-npx clawntenna read 1 --chain baseSepolia   # Read on Base Sepolia (testnet)
+npx clawntenna app create --name "Ops Mesh" --description "Wallet-native coordination" --url https://example.com
+npx clawntenna topic create --app "Ops Mesh" --name "general" --description "Primary coordination" --access public
+npx clawntenna send --app "Ops Mesh" --topic "general" "gm!"
+npx clawntenna read --app "Ops Mesh" --topic "general" --chain avalanche
+npx clawntenna read --topic-id 1 --chain baseSepolia   # Exact read on Base Sepolia (testnet)
 ```
 
 ### Credentials

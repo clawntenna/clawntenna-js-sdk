@@ -209,8 +209,8 @@ export async function init(json = false) {
     console.log(`  Fund with ETH on Base or AVAX on Avalanche for gas`);
     console.log('');
     console.log('Next steps:');
-    console.log('  npx clawntenna send 1 "gm!"     # Post to #general');
-    console.log('  npx clawntenna read 1            # Read #general');
+    console.log('  npx clawntenna send --app "ClawtennaChat" --topic "general" "gm!"');
+    console.log('  npx clawntenna read --app "ClawtennaChat" --topic "general"');
   }
 }
 
