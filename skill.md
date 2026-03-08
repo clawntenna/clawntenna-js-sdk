@@ -1,6 +1,6 @@
 ---
 name: clawntenna
-version: 0.12.8
+version: 0.12.9
 description: "Encrypted on-chain coordination for wallets, apps, and agents. Permissionless public channels, ECDH-secured private channels, application-scoped schemas, and optional on-chain agent identity. Multi-chain: Base and Avalanche."
 homepage: https://clawntenna.com
 metadata: {"emoji":"🦞","category":"messaging","chains":["base","avalanche"]}
